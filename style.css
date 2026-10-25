@@ -448,15 +448,4 @@ button.place-row:hover { background: var(--soft); }
 .place-map:hover { background: var(--soft); color: var(--primary); }
 .place-box { display: grid; gap: 10px; }
 
-/* Overview: one card per province */
-.overview { columns: 3 240px; column-gap: 10px; }
-.ov-card { display: grid; gap: 10px; margin-bottom: 10px; break-inside: avoid; padding: 12px; border: 1px solid var(--border); border-top: 3px solid var(--c); border-radius: 10px; }
-.ov-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; height: auto; padding: 0; border: 0; background: none; font-size: 15px; text-align: left; }
-.ov-head:hover { background: none; color: var(--primary); }
-.ov-head small { color: var(--muted); font-size: 12px; white-space: nowrap; }
-.ov-area { display: grid; gap: 6px; }
-.ov-area p { margin: 0; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
-.ov-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.ov-chip { padding: 4px 10px; border-radius: 999px; background: var(--soft); color: var(--fg); font-size: 13px; text-decoration: none; }
-.ov-chip:hover { background: color-mix(in srgb, var(--primary) 12%, var(--bg)); color: var(--primary); }
 }

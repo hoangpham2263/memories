@@ -526,35 +526,6 @@
     return el("div", { className: "place-box" }, tree, el("div", { className: "place-add" }, input, go), results);
   }
 
-  // ---------- overview: one card per province, areas inside with their places ----------
-  function renderOverview() {
-    const visited = [...visitedSet()].sort((a, b) => a.localeCompare(b, "vi"));
-    const photosBy = byProvince();
-    $("overviewCard").hidden = !visited.length;
-    $("overviewCount").textContent = visited.length ? `${visited.length} tỉnh · ${places.length} địa điểm` : "";
-    const chip = (x) => el("a", { className: "ov-chip", href: mapsLink(x), target: "_blank", rel: "noopener", title: x.note || "Mở Google Maps",
-      textContent: `${x.kind === "eat" || x.kind === "stay" ? `${KINDS[x.kind]} ` : ""}${titleCase(x.name)}` });
-    $("overview").replaceChildren(...visited.map((name) => {
-      const n = photosBy.get(name)?.length || 0;
-      const spots = placesIn(name);
-      const head = el("button", { type: "button", className: "ov-head" },
-        el("span", { textContent: name }),
-        el("small", { textContent: [spots.length ? `${spots.length} địa điểm` : "", n ? `${n} ảnh` : ""].filter(Boolean).join(" · ") }));
-      head.onclick = () => { selectProvince(name); document.querySelector(".map-card").scrollIntoView({ behavior: "smooth", block: "start" }); };
-      // Areas with several places get a small heading; single places (Đà Lạt, Mũi Né…) share one row
-      const loose = [], areas = [];
-      for (const [area, list] of byArea(spots)) {
-        if (area && !(list.length === 1 && titleCase(list[0].name) === titleCase(area))) areas.push([titleCase(area), list]);
-        else loose.push(...list);
-      }
-      const body = [
-        ...areas.map(([label, list]) => el("div", { className: "ov-area" }, el("p", { textContent: label }), el("div", { className: "ov-chips" }, ...list.map(chip)))),
-        loose.length ? el("div", { className: "ov-chips" }, ...loose.map(chip)) : null,
-      ].filter(Boolean);
-      return el("div", { className: "ov-card", style: `--c:${colorOf(name)}` }, head, ...body);
-    }));
-  }
-
   function renderSide() {
     const groups = byProvince();
     $("sideBack").hidden = !selected;
@@ -786,7 +757,6 @@
     renderSide();
     renderTrips();
     renderPlans();
-    renderOverview();
     renderTimeline();
     refreshMap();
   }
