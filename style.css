@@ -448,28 +448,15 @@ button.place-row:hover { background: var(--soft); }
 .place-map:hover { background: var(--soft); color: var(--primary); }
 .place-box { display: grid; gap: 10px; }
 
-/* Overview: tree diagram with branch lines */
-.overview { overflow-x: auto; }
-.tree, .tree ul { list-style: none; margin: 0; padding: 0; }
-.tree ul { padding-left: 22px; }
-.tree li { position: relative; padding: 3px 0 3px 18px; }
-.tree > li { padding-left: 0; }
-/* branch: vertical line from the parent + short horizontal tick */
-.tree ul > li::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px solid var(--border); }
-.tree ul > li:last-child::before { bottom: auto; height: 17px; }
-.tree ul > li::after { content: ""; position: absolute; left: 0; top: 17px; width: 14px; border-top: 1px solid var(--border); }
-.tree-node { display: inline-flex; align-items: center; gap: 8px; min-height: 28px; font-size: 14px; flex-wrap: wrap; }
-.tree-node small { color: var(--muted); font-size: 12px; }
-.t-root > .tree-node { font-size: 15px; }
-.t-prov-name { height: 30px; padding: 0 10px; gap: 8px; border-radius: 999px; }
-.t-prov-name i { width: 10px; height: 10px; border-radius: 3px; }
-.t-area-name { padding: 2px 10px; border-radius: 999px; background: var(--soft); font-size: 13px; }
-.t-place a { color: var(--fg); text-decoration: none; }
-.t-place a:hover { color: var(--primary); text-decoration: underline; }
-.t-place .tree-node small { flex-basis: 100%; margin-top: -4px; }
-@media (min-width: 900px) {
-  /* Provinces side by side in columns on wide screens */
-  .t-root > ul { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); column-gap: 16px; padding-left: 0; }
-  .t-root > ul > li::before, .t-root > ul > li::after { display: none; }
-  .t-root > ul > li { padding-left: 0; padding-top: 8px; }
+/* Overview: one card per province */
+.overview { columns: 3 240px; column-gap: 10px; }
+.ov-card { display: grid; gap: 10px; margin-bottom: 10px; break-inside: avoid; padding: 12px; border: 1px solid var(--border); border-top: 3px solid var(--c); border-radius: 10px; }
+.ov-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; height: auto; padding: 0; border: 0; background: none; font-size: 15px; text-align: left; }
+.ov-head:hover { background: none; color: var(--primary); }
+.ov-head small { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.ov-area { display: grid; gap: 6px; }
+.ov-area p { margin: 0; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.ov-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ov-chip { padding: 4px 10px; border-radius: 999px; background: var(--soft); color: var(--fg); font-size: 13px; text-decoration: none; }
+.ov-chip:hover { background: color-mix(in srgb, var(--primary) 12%, var(--bg)); color: var(--primary); }
 }

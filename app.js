@@ -526,35 +526,33 @@
     return el("div", { className: "place-box" }, tree, el("div", { className: "place-add" }, input, go), results);
   }
 
-  // ---------- overview: tree diagram Việt Nam → province → area → place ----------
+  // ---------- overview: one card per province, areas inside with their places ----------
   function renderOverview() {
     const visited = [...visitedSet()].sort((a, b) => a.localeCompare(b, "vi"));
     const photosBy = byProvince();
     $("overviewCard").hidden = !visited.length;
     $("overviewCount").textContent = visited.length ? `${visited.length} tỉnh · ${places.length} địa điểm` : "";
-    const node = (label, cls, ...kids) => el("li", { className: cls },
-      el("span", { className: "tree-node" }, ...[].concat(label)),
-      kids.length ? el("ul", {}, ...kids) : null);
-    const leaf = (x) => {
-      const a = el("a", { href: mapsLink(x), target: "_blank", rel: "noopener", title: x.note || "Mở Google Maps",
-        textContent: `${x.kind ? `${KINDS[x.kind]} ` : ""}${titleCase(x.name)}` });
-      return node([a, x.note ? el("small", { textContent: x.note }) : null].filter(Boolean), "t-place");
-    };
-    const provinceNode = (name) => {
+    const chip = (x) => el("a", { className: "ov-chip", href: mapsLink(x), target: "_blank", rel: "noopener", title: x.note || "Mở Google Maps",
+      textContent: `${x.kind === "eat" || x.kind === "stay" ? `${KINDS[x.kind]} ` : ""}${titleCase(x.name)}` });
+    $("overview").replaceChildren(...visited.map((name) => {
       const n = photosBy.get(name)?.length || 0;
-      const head = el("button", { type: "button", className: "t-prov-name" },
-        el("i", { style: `background:${colorOf(name)}` }), el("span", { textContent: name }),
-        n ? el("small", { textContent: `${n} ảnh` }) : null);
+      const spots = placesIn(name);
+      const head = el("button", { type: "button", className: "ov-head" },
+        el("span", { textContent: name }),
+        el("small", { textContent: [spots.length ? `${spots.length} địa điểm` : "", n ? `${n} ảnh` : ""].filter(Boolean).join(" · ") }));
       head.onclick = () => { selectProvince(name); document.querySelector(".map-card").scrollIntoView({ behavior: "smooth", block: "start" }); };
-      // One-place areas named like the place collapse into a single leaf
-      const areas = byArea(placesIn(name)).map(([area, list]) =>
-        area && !(list.length === 1 && titleCase(list[0].name) === titleCase(area))
-          ? node(el("span", { className: "t-area-name", textContent: titleCase(area) }), "t-area", ...list.map(leaf))
-          : list.map(leaf)).flat();
-      return node(head, "t-prov", ...areas);
-    };
-    $("overview").replaceChildren(el("ul", { className: "tree" },
-      node(el("strong", { textContent: `Việt Nam · ${visited.length}/34` }), "t-root", ...visited.map(provinceNode))));
+      // Areas with several places get a small heading; single places (Đà Lạt, Mũi Né…) share one row
+      const loose = [], areas = [];
+      for (const [area, list] of byArea(spots)) {
+        if (area && !(list.length === 1 && titleCase(list[0].name) === titleCase(area))) areas.push([titleCase(area), list]);
+        else loose.push(...list);
+      }
+      const body = [
+        ...areas.map(([label, list]) => el("div", { className: "ov-area" }, el("p", { textContent: label }), el("div", { className: "ov-chips" }, ...list.map(chip)))),
+        loose.length ? el("div", { className: "ov-chips" }, ...loose.map(chip)) : null,
+      ].filter(Boolean);
+      return el("div", { className: "ov-card", style: `--c:${colorOf(name)}` }, head, ...body);
+    }));
   }
 
   function renderSide() {
