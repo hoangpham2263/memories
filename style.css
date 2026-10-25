@@ -411,7 +411,7 @@ strong, b, th, summary, .dlg-head strong { font-weight: 500; }
 }
 
 /* Album in the side panel: places + search stick to the top, the photos scroll under them */
-.side-body.album > .place-box, .side-body.album > .chip-row, .side-body.album > .trip-head { position: sticky; top: 0; z-index: 2; background: var(--bg); padding-bottom: 8px; }
+.side-body.album > .trip-head { position: sticky; top: 0; z-index: 2; background: var(--bg); padding-bottom: 8px; }
 @media (max-width: 640px) {
   .side-body.album, .side-body.album.scrolls { overflow: visible; max-height: none; overscroll-behavior: auto; }
   .side-body.album > .place-box, .side-body.album > .chip-row, .side-body.album > .trip-head { position: static; }
@@ -433,3 +433,26 @@ strong, b, th, summary, .dlg-head strong { font-weight: 500; }
   .island-label span { transform: translate(-50%, -50%) scale(.75); }
 }
 .prov-list { display: grid; gap: 6px; }
+
+/* Places: grouped by area, with note and Google Maps link */
+.place-tree { display: grid; gap: 10px; }
+.place-area { display: grid; gap: 4px; }
+.place-area-name { margin: 0; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.place-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; width: 100%; height: auto; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); text-align: left; justify-content: stretch; white-space: normal; font-size: 14px; }
+.place-body { display: grid; gap: 2px; min-width: 0; }
+.place-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.place-body small { color: var(--muted); font-size: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.place-map { font-size: 12px; text-decoration: none; white-space: nowrap; }
+.place-box { display: grid; gap: 10px; }
+
+/* Overview tree */
+.overview { display: grid; gap: 6px; }
+.ov-prov { border: 1px solid var(--border); border-radius: 10px; }
+.ov-prov summary { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 12px; cursor: pointer; list-style: none; font-size: 14px; }
+.ov-prov summary::-webkit-details-marker { display: none; }
+.ov-prov summary i { width: 12px; height: 12px; border-radius: 3px; }
+.ov-prov summary small { color: var(--muted); font-size: 13px; }
+.ov-prov[open] summary { border-bottom: 1px solid var(--border); }
+.ov-body { display: grid; gap: 10px; padding: 10px 12px 12px; justify-items: start; }
+.ov-body .place-tree { width: 100%; }
+@media (min-width: 900px) { .overview { grid-template-columns: 1fr 1fr; align-items: start; } }

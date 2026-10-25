@@ -294,9 +294,28 @@ ${cover ? `<meta property="og:image" content="${url.origin}/api/img/${cover}"><m
       lng: num(x.lng),
       // Planned month for places to go next (YYYY-MM)
       date: /^\d{4}-\d{2}$/.test(x.date || "") ? x.date : null,
+      // Area inside the province (Vũng Tàu, Long Hải…), kind (eat / stay / see / other), note, Google Maps link
+      group: String(x.group || "").slice(0, 60),
+      kind: ["eat", "stay", "see", "other"].includes(x.kind) ? x.kind : "",
+      note: String(x.note || "").slice(0, 500),
+      url: /^https:\/\/(www\.)?(google\.[a-z.]+\/maps|maps\.google\.[a-z.]+|maps\.app\.goo\.gl|goo\.gl\/maps)/.test(x.url || "") ? String(x.url).slice(0, 500) : "",
     })).filter((x) => x.name);
     await env.MEM.put(spots, JSON.stringify(clean));
     return json(clean);
+  }
+
+  // Follow a short Google Maps link (maps.app.goo.gl/…) to the full URL, which carries the name and coordinates
+  if (path === "/api/resolve" && req.method === "GET") {
+    const u = url.searchParams.get("u") || "";
+    if (!/^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|(www\.)?google\.[a-z.]+\/maps)/.test(u)) return json({ error: "Không phải link Google Maps." }, 400);
+    let to = u;
+    for (let i = 0; i < 5; i++) {
+      const r = await fetch(to, { redirect: "manual" });
+      const next = r.headers.get("location");
+      if (!next) break;
+      to = new URL(next, to).toString();
+    }
+    return json({ url: to });
   }
 
   if (path === "/api/meta" && req.method === "PUT") {
