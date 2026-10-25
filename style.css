@@ -436,10 +436,10 @@ strong, b, th, summary, .dlg-head strong { font-weight: 500; }
 
 /* Places: grouped by area, with note and Google Maps link */
 .place-tree { display: grid; gap: 10px; }
-.place-area { display: grid; gap: 0; }
+.place-area { display: grid; gap: 6px; }
 .place-area-name { margin: 0; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
-.place-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; width: 100%; height: auto; padding: 9px 4px; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: none; text-align: left; justify-content: stretch; white-space: normal; font-size: 14px; }
-.place-area > .place-row:last-child { border-bottom: 0; }
+/* Same look as the place list rows (.prov) */
+.place-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; width: 100%; height: auto; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); text-align: left; justify-content: stretch; white-space: normal; font-size: 14px; }
 button.place-row:hover { background: var(--soft); }
 .place-body { display: grid; gap: 2px; min-width: 0; }
 .place-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
