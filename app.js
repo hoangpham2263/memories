@@ -263,14 +263,14 @@
     for (const x of plans) {
       if (x.lat == null || x.lng == null) continue;
       const m = L.circleMarker([x.lat, x.lng], { pane: "dots", radius: DOT, color: "#f59e0b", weight: 1, fillColor: "#fde68a", fillOpacity: 1 });
-      m.bindTooltip(`Sắp đi: ${x.name}`, { className: "tip", direction: "top" });
+      m.bindTooltip(`Sắp đi: ${titleCase(x.name)}`, { className: "tip", direction: "top" });
       grow(m);
       placeLayer.addLayer(m);
     }
     for (const x of places) {
       if (x.lat == null || x.lng == null) continue;
       const m = L.circleMarker([x.lat, x.lng], { pane: "dots", radius: DOT, color: cssVar("--muted"), weight: 1, fillColor: cssVar("--bg"), fillOpacity: 1 });
-      m.bindTooltip(x.name, { className: "tip", direction: "top" });
+      m.bindTooltip(titleCase(x.name), { className: "tip", direction: "top" });
       if (x.province) m.on("click", () => selectProvince(x.province));
       grow(m);
       placeLayer.addLayer(m);
@@ -358,7 +358,7 @@
     // Soonest planned month first, places without a date last
     const sorted = [...plans].sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999"));
     const chips = el("div", { className: "chip-row" }, ...sorted.map((x) => {
-      const chip = el("span", { className: "chip plan" }, el("span", { textContent: x.name }),
+      const chip = el("span", { className: "chip plan" }, el("span", { textContent: titleCase(x.name) }),
         x.date || x.province ? el("small", { textContent: [monthText(x.date), x.province].filter(Boolean).join(" · ") }) : null);
       if (admin) {
         const done = el("button", { type: "button", textContent: "✓", title: "Đã đi: chuyển sang nơi đã đến" });
@@ -389,10 +389,10 @@
       results.replaceChildren(el("p", { className: "muted small", textContent: "Đang tìm…" }));
       const found = (await searchSpots(q)).filter((r) => r.province).slice(0, 5);
       const plain = el("button", { type: "button", className: "link", textContent: `Thêm "${q}" không ghim vị trí` });
-      plain.onclick = () => savePlans([...plans, { name: q, province: "", lat: null, lng: null, date: when.value || null }], `✓ Đã thêm ${q}`);
+      plain.onclick = () => savePlans([...plans, { name: titleCase(q), province: "", lat: null, lng: null, date: when.value || null }], `✓ Đã thêm ${q}`);
       results.replaceChildren(...found.map((r) => {
         const b = el("button", { type: "button" }, el("span", { textContent: r.label }), el("small", { textContent: r.province }));
-        b.onclick = () => savePlans([...plans, { name: q, province: r.province, lat: r.lat, lng: r.lng, date: when.value || null }], `✓ Đã thêm ${q}`);
+        b.onclick = () => savePlans([...plans, { name: titleCase(q), province: r.province, lat: r.lat, lng: r.lng, date: when.value || null }], `✓ Đã thêm ${q}`);
         return b;
       }), ...(found.length ? [] : [el("p", { className: "muted small", textContent: `Không thấy "${q}".` })]), plain);
     };
@@ -411,6 +411,10 @@
   $("plansBtn").onclick = () => { renderPlans(); $("plansDlg").showModal(); };
 
   // ---------- places: areas, notes, Google Maps ----------
+  // Place names in one style: each all-lowercase word gets a capital (long hải → Long Hải); words already
+  // holding capitals (SANGLA, iPhone) stay as typed
+  const titleCase = (t) => String(t || "").trim().replace(/\s+/g, " ")
+    .replace(/(^|[\s(\-/])(\p{Ll})(\p{Ll}*)(?=$|[\s)\-/,.])/gu, (m, pre, a, rest) => pre + a.toLocaleUpperCase("vi") + rest);
   const KINDS = { see: "📍", eat: "🍜", stay: "🏠", other: "•" };
   const KIND_NAMES = { see: "Tham quan", eat: "Ăn uống", stay: "Chỗ ở", other: "Khác" };
   // Saved link, else a Maps search on the coordinates (or the name)
@@ -429,18 +433,21 @@
     return [...m].sort((a, b) => (!a[0] ? 1 : !b[0] ? -1 : a[0].localeCompare(b[0], "vi")));
   }
   function placeRow(x) {
-    const link = el("a", { className: "place-map", href: mapsLink(x), target: "_blank", rel: "noopener", title: "Mở Google Maps", textContent: "Maps ↗" });
+    const link = el("a", { className: "place-map", href: mapsLink(x), target: "_blank", rel: "noopener", title: "Mở Google Maps", ariaLabel: "Mở Google Maps",
+      innerHTML: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>' });
     const body = el("span", { className: "place-body" },
-      el("span", { className: "place-name", textContent: `${KINDS[x.kind] || "•"} ${x.name}` }),
+      el("span", { className: "place-name", textContent: x.kind ? `${KINDS[x.kind]} ${titleCase(x.name)}` : titleCase(x.name) }),
       x.note ? el("small", { textContent: x.note }) : null);
     const row = el(admin ? "button" : "div", { className: "place-row", ...(admin ? { type: "button", title: "Sửa" } : {}) }, body, link);
     if (admin) row.onclick = (e) => { if (!e.target.closest("a")) editPlace(x); };
     return row;
   }
   function placeTree(spots) {
+    // Area headings only once some place has an area
+    const grouped = spots.some((x) => x.group);
     return el("div", { className: "place-tree" }, ...byArea(spots).map(([area, list]) =>
       el("div", { className: "place-area" },
-        el("p", { className: "place-area-name", textContent: area || (spots.some((x) => x.group) ? "Khác" : "Địa điểm") }),
+        grouped ? el("p", { className: "place-area-name", textContent: titleCase(area) || "Khác" }) : null,
         ...list.map(placeRow))));
   }
 
@@ -461,7 +468,7 @@
   }
   $("placeSave").onclick = async () => {
     const f = $("placeForm");
-    const name = f.name.value.trim();
+    const name = titleCase(f.name.value);
     if (!name) return toast("Nhập tên địa điểm");
     let { lat, lng, province } = editing.draft;
     const url = f.url.value.trim();
@@ -470,7 +477,7 @@
       const pos = parseMaps(/goo\.gl/.test(url) ? (await api(`/api/resolve?u=${encodeURIComponent(url)}`).catch(() => ({ url })) ).url : url);
       if (pos.lat != null) ({ lat, lng } = pos);
     }
-    const item = { ...editing.draft, name, group: f.group.value.trim(), kind: f.kind.value, note: f.note.value.trim(), url: isMapsUrl(url) ? url : "", lat, lng, province };
+    const item = { ...editing.draft, name, group: titleCase(f.group.value), kind: f.kind.value, note: f.note.value.trim(), url: isMapsUrl(url) ? url : "", lat, lng, province };
     const next = editing.place ? places.map((y) => (y === editing.place ? item : y)) : [...places, item];
     $("placeDlg").close();
     await savePlaces(next, editing.place ? `✓ Đã lưu ${name}` : `✓ Đã thêm ${name}`);
@@ -544,7 +551,8 @@
     if (selected && provinces.concat(ABROAD).includes(selected)) {
       const list = newestFirst(groups.get(selected) || []);
       albumList = list;
-      $("sideTitle").textContent = `${selected} · ${list.length} ảnh`;
+      const count = [list.length ? `${list.length} ảnh` : "", placesIn(selected).length ? `${placesIn(selected).length} địa điểm` : ""].filter(Boolean).join(" · ");
+      $("sideTitle").textContent = count ? `${selected} · ${count}` : selected;
       const ticked = visitedSet().has(selected);
       const spots = placesIn(selected);
       $("sideBody").replaceChildren(...[
