@@ -378,27 +378,7 @@
       }
       return chip;
     }));
-    if (!admin) return $("plans").replaceChildren(chips);
-    const input = el("input", { placeholder: "Thêm nơi muốn đi, vd: Phú Quốc, Sa Pa…", autocomplete: "off" });
-    const go = el("button", { type: "button", textContent: "Tìm" });
-    const when = el("input", { type: "month", title: "Dự định đi (không bắt buộc)", "aria-label": "Dự định đi" });
-    const results = el("div", { className: "place-results" });
-    const search = async () => {
-      const q = input.value.trim();
-      if (!q) return;
-      results.replaceChildren(el("p", { className: "muted small", textContent: "Đang tìm…" }));
-      const found = (await searchSpots(q)).filter((r) => r.province).slice(0, 5);
-      const plain = el("button", { type: "button", className: "link", textContent: `Thêm "${q}" không ghim vị trí` });
-      plain.onclick = () => savePlans([...plans, { name: titleCase(q), province: "", lat: null, lng: null, date: when.value || null }], `✓ Đã thêm ${q}`);
-      results.replaceChildren(...found.map((r) => {
-        const b = el("button", { type: "button" }, el("span", { textContent: r.label }), el("small", { textContent: r.province }));
-        b.onclick = () => savePlans([...plans, { name: titleCase(q), province: r.province, lat: r.lat, lng: r.lng, date: when.value || null }], `✓ Đã thêm ${q}`);
-        return b;
-      }), ...(found.length ? [] : [el("p", { className: "muted small", textContent: `Không thấy "${q}".` })]), plain);
-    };
-    go.onclick = search;
-    input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); search(); } });
-    $("plans").replaceChildren(...[plans.length ? chips : null, el("div", { className: "place-add plan-add" }, input, go, el("label", { className: "plan-when" }, el("span", { textContent: "Tháng dự định" }), when)), results].filter(Boolean));
+    $("plans").replaceChildren(plans.length ? chips : el("p", { className: "empty", textContent: "Chưa có nơi sắp đi. Thêm ở nút \"+ Thêm\"." }));
   }
 
   $("settingsBtn").onclick = () => $("settingsDlg").showModal();
@@ -489,42 +469,12 @@
     await savePlaces(places.filter((y) => y !== x), `Đã xóa ${x.name}`);
   };
 
-  // Side panel of a province: places by area, plus search / paste a Google Maps link to add
+  // Side panel of a province: places by area (adding goes through "+ Thêm")
   function placeBox(province, spots) {
     const tree = spots.length ? placeTree(spots) : null;
-    if (!admin) return tree;
-    const input = el("input", { placeholder: `Tìm hoặc dán link Google Maps…`, autocomplete: "off" });
-    const go = el("button", { type: "button", textContent: "Thêm" });
-    const results = el("div", { className: "place-results" });
-    const search = async () => {
-      const q = input.value.trim();
-      if (!q) return;
-      results.replaceChildren(el("p", { className: "muted small", textContent: "Đang tìm…" }));
-      if (isMapsUrl(q)) {
-        let full = q;
-        if (/goo\.gl/.test(q)) {
-          try { full = (await api(`/api/resolve?u=${encodeURIComponent(q)}`)).url; } catch (err) { return results.replaceChildren(el("p", { className: "muted small", textContent: err.message })); }
-        }
-        const pos = parseMaps(full);
-        results.replaceChildren();
-        input.value = "";
-        return editPlace(null, { name: pos.name, lat: pos.lat, lng: pos.lng, url: q, province: pos.lat != null ? provinceAt(pos.lat, pos.lng) || province : province });
-      }
-      // Only results inside this province
-      const found = (await searchSpots(q)).filter((r) => r.province === province).slice(0, 5);
-      const pick = (lat, lng) => { results.replaceChildren(); input.value = ""; editPlace(null, { name: q, lat, lng, province }); };
-      const plain = el("button", { type: "button", className: "link", textContent: `Thêm "${q}" không ghim vị trí` });
-      plain.onclick = () => pick(null, null);
-      results.replaceChildren(...found.map((r) => {
-        const b = el("button", { type: "button", textContent: r.label });
-        b.onclick = () => pick(r.lat, r.lng);
-        return b;
-      }), ...(found.length ? [] : [el("p", { className: "muted small", textContent: `Không thấy "${q}" ở ${province}.` })]), plain);
-    };
-    go.onclick = search;
-    input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); search(); } });
-    return el("div", { className: "place-box" }, tree, el("div", { className: "place-add" }, input, go), results);
+    return tree;
   }
+
 
   function renderSide() {
     const groups = byProvince();
@@ -537,7 +487,7 @@
       const ticked = visitedSet().has(selected);
       const spots = placesIn(selected);
       $("sideBody").replaceChildren(...[
-        spots.length || admin ? placeBox(selected, spots) : null,
+        spots.length ? placeBox(selected, spots) : null,
         list.length ? albumGrid(list, selected) : ticked || spots.length ? null : el("p", { className: "empty", textContent: "Chưa có ảnh." }),
       ].filter(Boolean));
       return;
@@ -1094,7 +1044,7 @@
       toast("✓ Đã lưu nơi đã đến");
     } catch (err) { toast(err.message); }
   }
-  $("visitedBtn").onclick = () => {
+  function openVisited() {
     const withPhotos = byProvince();
     $("visitedList").replaceChildren(...provinces.map((n) => {
       const has = withPhotos.has(n);
@@ -1102,7 +1052,7 @@
       return el("label", { className: "vis-item", title: has ? "Đã có ảnh" : "" }, box, el("span", { textContent: n }));
     }));
     $("visitedDlg").showModal();
-  };
+  }
   $("visitedSave").onclick = async () => {
     await saveManual([...$("visitedList").querySelectorAll("input:checked:not(:disabled)")].map((x) => x.value));
     $("visitedDlg").close();
@@ -1202,7 +1152,70 @@
     $("uploadGo").disabled = true;
     $("uploadDlg").showModal();
   }
-  $("addBtn").onclick = openUpload;
+  // ---------- "+ Thêm": one place to add a photo, a place, a plan or a visited province ----------
+  let addMode = "";
+  function openAdd() {
+    $("addTitle").textContent = "Thêm mới";
+    $("addChoices").hidden = false;
+    $("addSpot").hidden = true;
+    $("addDlg").showModal();
+  }
+  function showSpot(mode) {
+    addMode = mode;
+    $("addTitle").textContent = mode === "plan" ? "Thêm nơi sắp đi" : "Thêm địa điểm đã đi";
+    $("addChoices").hidden = true;
+    $("addSpot").hidden = false;
+    // Places belong to a province (preset to the one open on the map); plans take theirs from the search result
+    $("addProvince").hidden = mode !== "place";
+    if ($("addProvince").options.length < 2) provinceOptions($("addProvince"), "", "Tỉnh: tự nhận theo vị trí");
+    $("addProvince").value = provinces.includes(selected) ? selected : "";
+    $("addMonthRow").hidden = mode !== "plan";
+    $("addQuery").value = "";
+    $("addResults").replaceChildren();
+    $("addQuery").focus();
+  }
+  document.querySelectorAll("[data-add]").forEach((b) => (b.onclick = () => {
+    const what = b.dataset.add;
+    if (what === "photo") { $("addDlg").close(); return openUpload(); }
+    if (what === "province") { $("addDlg").close(); return openVisited(); }
+    showSpot(what);
+  }));
+  $("addBack").onclick = openAdd;
+
+  // Found or pasted → a place opens its details form, a plan is saved straight away
+  function addSpot({ name, lat, lng, province, url }) {
+    $("addDlg").close();
+    if (addMode === "plan") {
+      return savePlans([...plans, { name: titleCase(name), province: province || "", lat, lng, date: $("addMonth").value || null }], `✓ Đã thêm ${titleCase(name)}`);
+    }
+    editPlace(null, { name, lat, lng, url: url || "", province: $("addProvince").value || province || "" });
+  }
+  async function addSearch() {
+    const q = $("addQuery").value.trim();
+    if (!q) return;
+    const out = $("addResults");
+    out.replaceChildren(el("p", { className: "muted small", textContent: "Đang tìm…" }));
+    if (isMapsUrl(q)) {
+      let full = q;
+      if (/goo\.gl/.test(q)) {
+        try { full = (await api(`/api/resolve?u=${encodeURIComponent(q)}`)).url; } catch (err) { return out.replaceChildren(el("p", { className: "muted small", textContent: err.message })); }
+      }
+      const pos = parseMaps(full);
+      return addSpot({ name: pos.name, lat: pos.lat, lng: pos.lng, url: q, province: pos.lat != null ? provinceAt(pos.lat, pos.lng) || "" : "" });
+    }
+    const only = addMode === "place" ? $("addProvince").value : "";
+    const found = (await searchSpots(q)).filter((r) => r.province && (!only || r.province === only)).slice(0, 6);
+    const plain = el("button", { type: "button", className: "link", textContent: `Thêm "${q}" không ghim vị trí` });
+    plain.onclick = () => addSpot({ name: q, lat: null, lng: null, province: only });
+    out.replaceChildren(...found.map((r) => {
+      const b = el("button", { type: "button" }, el("span", { textContent: r.label }), el("small", { textContent: r.province }));
+      b.onclick = () => addSpot({ name: q, lat: r.lat, lng: r.lng, province: r.province });
+      return b;
+    }), ...(found.length ? [] : [el("p", { className: "muted small", textContent: `Không thấy "${q}"${only ? ` ở ${only}` : ""}.` })]), plain);
+  }
+  $("addSearch").onclick = addSearch;
+  $("addQuery").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addSearch(); } });
+  $("addBtn").onclick = openAdd;
   const zone = $("dropZone");
   zone.onclick = () => $("fileInput").click();
   zone.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("fileInput").click(); } };
