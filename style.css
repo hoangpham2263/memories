@@ -460,3 +460,6 @@ button.place-row:hover { background: var(--soft); }
 .add-choices button svg { color: var(--primary); margin-bottom: 4px; }
 .add-choices button:hover { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 5%, var(--bg)); }
 .add-choices button { justify-content: start; justify-items: start; }
+.form-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+@media (max-width: 640px) { .form-2 { grid-template-columns: 1fr; } }
+.form-2 .plan-when { grid-column: auto; }
