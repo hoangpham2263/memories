@@ -19,6 +19,17 @@
     set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} },
   };
 
+  // We put the scroll back ourselves once the data is drawn (the browser would do it too early)
+  if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+  // UI state kept between visits (open province, year, pages, map view, scroll) so a reload looks the same
+  const ui = (() => { try { return JSON.parse(store.get("mem-ui") || "{}"); } catch { return {}; } })();
+  let uiTimer;
+  const saveUI = (patch) => {
+    Object.assign(ui, patch);
+    clearTimeout(uiTimer);
+    uiTimer = setTimeout(() => store.set("mem-ui", JSON.stringify(ui)), 150);
+  };
+
   let photos = [];
   let year = ""; // year filter, "" = all
   // Photos of the chosen year (all when no filter): what the map, trips, stats and timeline show
@@ -239,6 +250,9 @@
 
     map.fitBounds(VN_BOUNDS, { padding: [10, 10] });
     map.setMaxBounds(L.latLngBounds([4, 96], [27, 121]));
+    // Same zoom and position as last visit
+    if (ui.view) map.setView([ui.view.lat, ui.view.lng], ui.view.z, { animate: false });
+    map.on("moveend", () => { const c = map.getCenter(); saveUI({ view: { lat: +c.lat.toFixed(4), lng: +c.lng.toFixed(4), z: map.getZoom() } }); });
     window.addEventListener("resize", () => map.invalidateSize());
   }
 
@@ -299,6 +313,7 @@
 
   function selectProvince(name) {
     selected = name;
+    saveUI({ selected: name });
     layer.setStyle(styleFor);
     raiseSelected();
     renderSide();
@@ -745,7 +760,7 @@
       const cur = pageAt[key];
       const btn = (label, n, props = {}) => {
         const b = el("button", { type: "button", textContent: label, ...props });
-        b.onclick = () => { pageAt[key] = n; draw(); };
+        b.onclick = () => { pageAt[key] = n; saveUI({ pages: { ...pageAt } }); draw(); };
         return b;
       };
       // Numbered pages: first, last and the ones next to the current page, "…" for the gaps
@@ -904,6 +919,7 @@
   }
 
   function renderAll() {
+    saveUI({ selected: provinces.concat(ABROAD, OTHER).includes(selected) ? selected : null, year });
     renderStats();
     renderSide();
     renderTrips();
@@ -1609,9 +1625,17 @@
       toast(`Không tải được ảnh: ${err.message}`);
     }
     await adminP;
+    // Put back what was open last time before the first paint, so nothing jumps
+    if (ui.year && photos.some((p) => (p.takenAt || "").startsWith(ui.year))) year = ui.year;
+    if (ui.selected && provinces.concat(ABROAD, OTHER).includes(ui.selected)) selected = ui.selected;
+    Object.assign(pageAt, ui.pages || {});
+    if (selected) albumKey = selected;
     renderAll();
+    if (ui.scroll) setTimeout(() => window.scrollTo(0, ui.scroll), 0);
+    window.addEventListener("scroll", () => saveUI({ scroll: Math.round(window.scrollY) }), { passive: true });
     $("sideBack").onclick = () => {
       selected = null;
+      saveUI({ selected: null });
       history.replaceState(null, "", location.pathname);
       renderAll();
     };
