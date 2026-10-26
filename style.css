@@ -474,3 +474,9 @@ button.place-row:hover { background: var(--soft); }
 .new-area { padding-top: 6px; border-top: 1px dashed var(--border); }
 .quick-open { justify-self: start; padding: 2px 0; font-size: 13px; }
 @media (max-width: 640px) { .timeline .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; } }
+.area-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.area-head .place-act { width: 26px; height: 26px; }
+/* Hierarchy: places sit indented under their area, with a guide line */
+.place-area > .place-area-name ~ *, .place-area > .area-head ~ * { margin-left: 14px; }
+.place-area:has(> .place-area-name, > .area-head) { position: relative; }
+.place-area:has(> .place-area-name, > .area-head)::before { content: ""; position: absolute; left: 4px; top: 26px; bottom: 4px; border-left: 1px solid var(--border); }

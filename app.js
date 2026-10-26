@@ -462,6 +462,37 @@
     return open;
   }
 
+  const ICON_TRASH = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/></svg>';
+  // Area heading; the owner can rename it (moves every place in it) or delete it with its places
+  function areaHead(province, area, list) {
+    const name = el("p", { className: "place-area-name", textContent: titleCase(area) || "Khác" });
+    if (!admin || !province || !area) return name;
+    const rename = el("button", { type: "button", className: "place-act", title: "Đổi tên khu vực", ariaLabel: "Đổi tên khu vực", innerHTML: ICON_EDIT });
+    const del = el("button", { type: "button", className: "place-act", title: "Xóa khu vực", ariaLabel: "Xóa khu vực", innerHTML: ICON_TRASH });
+    const head = el("div", { className: "area-head" }, name, el("span", { className: "place-acts" }, rename, del));
+    rename.onclick = () => {
+      const input = el("input", { value: titleCase(area), autocomplete: "off" });
+      const ok = el("button", { type: "button", textContent: "Lưu" });
+      const save = async () => {
+        const to = titleCase(input.value);
+        if (!to || to === titleCase(area)) return renderSide();
+        if (newAreas[province]) newAreas[province] = newAreas[province].map((a) => (a === area ? to : a));
+        await savePlaces(places.map((x) => (x.province === province && x.group === area ? { ...x, group: to } : x)), `✓ Đã đổi thành ${to}`);
+      };
+      ok.onclick = save;
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); save(); } if (e.key === "Escape") renderSide(); });
+      head.replaceWith(el("div", { className: "place-add" }, input, ok));
+      input.focus();
+    };
+    del.onclick = async () => {
+      if (list.length && !confirm(`Xóa khu vực "${titleCase(area)}" và ${list.length} địa điểm trong đó?`)) return;
+      if (newAreas[province]) newAreas[province] = newAreas[province].filter((a) => a !== area);
+      if (!list.length) return renderSide();
+      await savePlaces(places.filter((x) => !(x.province === province && x.group === area)), `Đã xóa ${titleCase(area)}`);
+    };
+    return head;
+  }
+
   // New, still empty areas the owner has started in this session (per province)
   const newAreas = {};
   function placeTree(spots, province) {
@@ -471,7 +502,7 @@
     const grouped = areas.some(([n]) => n);
     const tree = el("div", { className: "place-tree" }, ...areas.map(([area, list]) =>
       el("div", { className: "place-area" },
-        grouped ? el("p", { className: "place-area-name", textContent: titleCase(area) || "Khác" }) : null,
+        grouped ? areaHead(province, area, list) : null,
         ...list.map(placeRow),
         admin && province ? addRow(province, area, `Thêm vào ${titleCase(area) || "đây"}: tên hoặc link Maps`) : null)));
     if (admin && province) {
