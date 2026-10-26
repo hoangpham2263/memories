@@ -480,3 +480,6 @@ button.place-row:hover { background: var(--soft); }
 .place-area > .place-area-name ~ *, .place-area > .area-head ~ * { margin-left: 14px; }
 .place-area:has(> .place-area-name, > .area-head) { position: relative; }
 .place-area:has(> .place-area-name, > .area-head)::before { content: ""; position: absolute; left: 4px; top: 26px; bottom: 4px; border-left: 1px solid var(--border); }
+/* "+ Thêm" has three choices now (places are added inside each province) */
+.add-choices { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 640px) { .add-choices { grid-template-columns: 1fr; } .add-choices button { min-height: 0; } }
