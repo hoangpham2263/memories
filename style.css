@@ -463,3 +463,13 @@ button.place-row:hover { background: var(--soft); }
 .form-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 @media (max-width: 640px) { .form-2 { grid-template-columns: 1fr; } }
 .form-2 .plan-when { grid-column: auto; }
+
+/* Place rows with actions, quick add per area */
+.place-acts { display: flex; gap: 2px; }
+.place-act { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--muted); }
+.place-act:hover { background: var(--soft); color: var(--primary); }
+.quick-add input, .new-area input { height: 34px; font-size: 13px; }
+.quick-add button, .new-area button { height: 34px; font-size: 13px; }
+.quick-add input { border-style: dashed; }
+.new-area { padding-top: 6px; border-top: 1px dashed var(--border); }
+.quick-open { justify-self: start; padding: 2px 0; font-size: 13px; }

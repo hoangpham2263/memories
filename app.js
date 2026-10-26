@@ -412,23 +412,83 @@
     for (const x of spots) m.set(x.group || "", [...(m.get(x.group || "") || []), x]);
     return [...m].sort((a, b) => (!a[0] ? 1 : !b[0] ? -1 : a[0].localeCompare(b[0], "vi")));
   }
+  const ICON_PIN = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>';
+  const ICON_EDIT = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
+  // One place: name + note, then Maps and (owner) edit
   function placeRow(x) {
-    const link = el("a", { className: "place-map", href: mapsLink(x), target: "_blank", rel: "noopener", title: "Mở Google Maps", ariaLabel: "Mở Google Maps",
-      innerHTML: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>' });
+    const link = el("a", { className: "place-act", href: mapsLink(x), target: "_blank", rel: "noopener", title: "Mở Google Maps", ariaLabel: "Mở Google Maps", innerHTML: ICON_PIN });
     const body = el("span", { className: "place-body" },
       el("span", { className: "place-name", textContent: x.kind ? `${KINDS[x.kind]} ${titleCase(x.name)}` : titleCase(x.name) }),
       x.note ? el("small", { textContent: x.note }) : null);
-    const row = el(admin ? "button" : "div", { className: "place-row", ...(admin ? { type: "button", title: "Sửa" } : {}) }, body, link);
-    if (admin) row.onclick = (e) => { if (!e.target.closest("a")) editPlace(x); };
-    return row;
+    const acts = el("span", { className: "place-acts" }, link);
+    if (admin) {
+      const edit = el("button", { type: "button", className: "place-act", title: "Sửa", ariaLabel: "Sửa", innerHTML: ICON_EDIT });
+      edit.onclick = () => editPlace(x);
+      acts.append(edit);
+    }
+    return el("div", { className: "place-row" }, body, acts);
   }
-  function placeTree(spots) {
+
+  // Quick add inside an area: type a name (or paste a Maps link) and Enter; the position is looked up on its own
+  async function quickAdd(province, area, text) {
+    const q = text.trim();
+    if (!q) return;
+    let item = { name: "", province, group: area, kind: "", note: "", url: "", lat: null, lng: null };
+    try {
+      if (isMapsUrl(q)) {
+        const pos = await fromMapsLink(q);
+        item = { ...item, name: pos.name, lat: pos.lat, lng: pos.lng, url: q };
+      } else {
+        item.name = q;
+        const hit = (await searchSpots(`${q} ${area}`.trim())).find((r) => r.province === province)
+          || (await searchSpots(q)).find((r) => r.province === province);
+        if (hit) Object.assign(item, { lat: hit.lat, lng: hit.lng });
+      }
+    } catch (err) { if (!item.name) return toast(err.message); }
+    item.name = titleCase(item.name || q);
+    item.kind = guessKind(item.name);
+    await savePlaces([...places, item], `✓ Đã thêm ${item.name}${item.lat == null ? " (chưa ghim vị trí)" : ""}`);
+  }
+  function addRow(province, area, placeholder) {
+    const input = el("input", { placeholder, autocomplete: "off" });
+    const go = el("button", { type: "button", textContent: "Thêm" });
+    const run = async () => { go.disabled = true; await quickAdd(province, area, input.value); go.disabled = false; };
+    go.onclick = run;
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); run(); } if (e.key === "Escape") row.replaceWith(open); });
+    const row = el("div", { className: "place-add quick-add" }, input, go);
+    // Collapsed to a small "+ Thêm" link until needed
+    const open = el("button", { type: "button", className: "link quick-open", textContent: "+ Thêm địa điểm" });
+    open.onclick = () => { open.replaceWith(row); input.focus(); };
+    return open;
+  }
+
+  // New, still empty areas the owner has started in this session (per province)
+  const newAreas = {};
+  function placeTree(spots, province) {
+    const areas = byArea(spots);
+    if (admin && province) for (const a of newAreas[province] || []) if (!areas.some(([n]) => n === a)) areas.push([a, []]);
     // Area headings only once some place has an area
-    const grouped = spots.some((x) => x.group);
-    return el("div", { className: "place-tree" }, ...byArea(spots).map(([area, list]) =>
+    const grouped = areas.some(([n]) => n);
+    const tree = el("div", { className: "place-tree" }, ...areas.map(([area, list]) =>
       el("div", { className: "place-area" },
         grouped ? el("p", { className: "place-area-name", textContent: titleCase(area) || "Khác" }) : null,
-        ...list.map(placeRow))));
+        ...list.map(placeRow),
+        admin && province ? addRow(province, area, `Thêm vào ${titleCase(area) || "đây"}: tên hoặc link Maps`) : null)));
+    if (admin && province) {
+      // Start a new area: name it, then add places into it
+      const input = el("input", { placeholder: "Khu vực mới (vd: Long Hải)", autocomplete: "off" });
+      const go = el("button", { type: "button", textContent: "Tạo" });
+      const make = () => {
+        const n = titleCase(input.value);
+        if (!n) return input.focus();
+        (newAreas[province] ||= []).push(n);
+        renderSide();
+      };
+      go.onclick = make;
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); make(); } });
+      tree.append(el("div", { className: "place-add new-area" }, input, go));
+    }
+    return tree;
   }
 
   // Add / edit one place in a dialog
@@ -534,8 +594,7 @@
 
   // Side panel of a province: places by area (adding goes through "+ Thêm")
   function placeBox(province, spots) {
-    const tree = spots.length ? placeTree(spots) : null;
-    return tree;
+    return spots.length || admin ? placeTree(spots, province) : null;
   }
 
 
@@ -550,7 +609,7 @@
       const ticked = visitedSet().has(selected);
       const spots = placesIn(selected);
       $("sideBody").replaceChildren(...[
-        spots.length ? placeBox(selected, spots) : null,
+        spots.length || admin ? placeBox(selected, spots) : null,
         list.length ? albumGrid(list, selected) : ticked || spots.length ? null : el("p", { className: "empty", textContent: "Chưa có ảnh." }),
       ].filter(Boolean));
       return;
