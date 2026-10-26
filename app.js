@@ -353,9 +353,10 @@
     try { plans = await api("/api/plans", jsonBody("PUT", { places: next })); renderAll(); toast(msg); }
     catch (err) { toast(err.message); }
   }
-  const monthText = (m) => (m ? `${+m.slice(5)}/${m.slice(0, 4)}` : "");
+  // 2026-12-05 → 05/12/2026 (older entries hold only the month: 2026-12 → 12/2026)
+  const monthText = (m) => (!m ? "" : m.length > 7 ? `${m.slice(8)}/${m.slice(5, 7)}/${m.slice(0, 4)}` : `${+m.slice(5)}/${m.slice(0, 4)}`);
   function renderPlans() {
-    // Soonest planned month first, places without a date last
+    // Soonest planned date first, places without a date last
     const sorted = [...plans].sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999"));
     const chips = el("div", { className: "chip-row" }, ...sorted.map((x) => {
       const chip = el("span", { className: "chip plan" }, el("span", { textContent: titleCase(x.name) }),

@@ -292,8 +292,8 @@ ${cover ? `<meta property="og:image" content="${url.origin}/api/img/${cover}"><m
       province: String(x.province || "").slice(0, 60),
       lat: num(x.lat),
       lng: num(x.lng),
-      // Planned month for places to go next (YYYY-MM)
-      date: /^\d{4}-\d{2}$/.test(x.date || "") ? x.date : null,
+      // Planned date for places to go next (YYYY-MM-DD, older entries YYYY-MM)
+      date: /^\d{4}-\d{2}(-\d{2})?$/.test(x.date || "") ? x.date : null,
       // Area inside the province (Vũng Tàu, Long Hải…), kind (eat / stay / see / other), note, Google Maps link
       group: String(x.group || "").slice(0, 60),
       kind: ["eat", "stay", "see", "other"].includes(x.kind) ? x.kind : "",
