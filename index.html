@@ -175,21 +175,18 @@
         <div class="dlg-head"><strong id="placeDlgTitle">Địa điểm</strong><button class="icon" value="cancel" aria-label="Đóng">✕</button></div>
         <select name="province" aria-label="Tỉnh"></select>
         <div class="place-add">
-          <input name="name" placeholder="Tên địa điểm hoặc dán link Google Maps" autocomplete="off" required />
+          <input name="name" placeholder="Dán link Google Maps hoặc gõ tên" autocomplete="off" required />
           <button id="placeFind" type="button">Tìm vị trí</button>
         </div>
         <div id="placeFound" class="place-results"></div>
         <p id="placePin" class="muted small"></p>
-        <div class="form-2">
-          <select name="kind" aria-label="Loại">
+        <select name="kind" aria-label="Loại">
             <option value="">Loại</option>
             <option value="see">Tham quan</option>
             <option value="eat">Ăn uống</option>
             <option value="stay">Chỗ ở</option>
             <option value="other">Khác</option>
           </select>
-          <label class="plan-when"><span>Ngày đi</span><input name="date" type="date" /></label>
-        </div>
         <input name="group" placeholder="Khu vực (vd: Vũng Tàu, Long Hải)" list="groupList" autocomplete="off" />
         <datalist id="groupList"></datalist>
         <textarea name="note" rows="3" placeholder="Ghi chú (ăn gì, ở đâu, giá…)"></textarea>
@@ -246,6 +243,6 @@
     <script src="vendor/exifr.full.umd.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script>
-    <script src="app.js?v=74"></script>
+    <script src="app.js?v=75"></script>
   </body>
 </html>

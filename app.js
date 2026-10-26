@@ -170,11 +170,10 @@
     const i = provinces.indexOf(name);
     return PALETTE[(i < 0 ? 0 : i) % PALETTE.length];
   }
-  // With a year filter, only places visited that year
-  const placesIn = (province) => places.filter((x) => x.province === province && (!year || (x.date || "").startsWith(year)));
+  const placesIn = (province) => places.filter((x) => x.province === province);
   // Visited = has photos, a pinned place, or ticked by hand
-  // With a year filter, only provinces with photos or dated places from that year
-  const visitedSet = () => new Set([...byProvince().keys(), ...(year ? [] : manual), ...places.filter((x) => !year || (x.date || "").startsWith(year)).map((x) => x.province)].filter((n) => provinces.includes(n)));
+  // With a year filter, only provinces with photos from that year
+  const visitedSet = () => new Set([...byProvince().keys(), ...(year ? [] : [...manual, ...places.map((x) => x.province)])].filter((n) => provinces.includes(n)));
 
   function styleFor(feature) {
     const hasPhotos = byProvince().has(feature.properties.name);
@@ -268,7 +267,7 @@
       grow(m);
       placeLayer.addLayer(m);
     }
-    for (const x of places.filter((y) => !year || (y.date || "").startsWith(year))) {
+    for (const x of places) {
       if (x.lat == null || x.lng == null) continue;
       const m = L.circleMarker([x.lat, x.lng], { pane: "dots", radius: DOT, color: cssVar("--muted"), weight: 1, fillColor: cssVar("--bg"), fillOpacity: 1 });
       m.bindTooltip(titleCase(x.name), { className: "tip", direction: "top" });
@@ -418,7 +417,7 @@
       innerHTML: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>' });
     const body = el("span", { className: "place-body" },
       el("span", { className: "place-name", textContent: x.kind ? `${KINDS[x.kind]} ${titleCase(x.name)}` : titleCase(x.name) }),
-      x.note || x.date ? el("small", { textContent: [monthText(x.date), x.note].filter(Boolean).join(" · ") }) : null);
+      x.note ? el("small", { textContent: x.note }) : null);
     const row = el(admin ? "button" : "div", { className: "place-row", ...(admin ? { type: "button", title: "Sửa" } : {}) }, body, link);
     if (admin) row.onclick = (e) => { if (!e.target.closest("a")) editPlace(x); };
     return row;
@@ -444,7 +443,6 @@
     f.name.value = d.name || "";
     f.group.value = d.group || "";
     f.kind.value = d.kind || "";
-    f.date.value = d.date && d.date.length > 7 ? d.date : "";
     f.note.value = d.note || "";
     f.url.value = d.url || "";
     $("placeFound").replaceChildren();
@@ -458,18 +456,28 @@
   // Area suggestions from the chosen province
   const fillAreas = () => $("groupList").replaceChildren(...[...new Set(places.filter((y) => y.province === $("placeForm").province.value).map((y) => y.group).filter(Boolean))].map((g) => el("option", { value: g })));
   $("placeForm").province.onchange = fillAreas;
-  const setPos = ({ lat, lng, province, name, url }) => {
+  // Guess the kind from the name (homestay → stay, quán/chợ/cafe → eat…)
+  const guessKind = (n) => /homestay|hotel|khách sạn|resort|nhà nghỉ|villa|motel|hostel/i.test(n) ? "stay"
+    : /quán|nhà hàng|chợ|cafe|cà phê|coffee|bún|phở|bánh|lẩu|nướng|hải sản|ốc|restaurant|food|ăn/i.test(n) ? "eat" : n ? "see" : "";
+  const setPos = ({ lat, lng, province, name, url }, auto = false) => {
     const f = $("placeForm");
     Object.assign(editing.draft, { lat, lng });
-    if (province && !f.province.value) f.province.value = province;
+    // From a pasted link: take its province; from a search: only fill when empty
+    if (province && (auto || !f.province.value)) f.province.value = province;
+    if (auto && name && !f.kind.value) f.kind.value = guessKind(name);
     if (name && (!f.name.value || isMapsUrl(f.name.value))) f.name.value = name;
     if (url) f.url.value = url;
     $("placeFound").replaceChildren();
     showPin();
     fillAreas();
+    // Area from the position (Phước Hải, Long Hải…) when not set yet
+    if (lat != null && !f.group.value) placeName(lat, lng).then((n) => { if (n && !f.group.value) f.group.value = titleCase(n); });
   };
   async function fromMapsLink(u) {
-    const full = /goo\.gl/.test(u) ? (await api(`/api/resolve?u=${encodeURIComponent(u)}`)).url : u;
+    let full = /goo\.gl/.test(u) ? (await api(`/api/resolve?u=${encodeURIComponent(u)}`)).url : u;
+    // Google sometimes stops at a consent page; the real Maps URL is in its "continue" parameter
+    const cont = full.match(/[?&]continue=([^&]+)/);
+    if (cont) full = decodeURIComponent(cont[1]);
     const pos = parseMaps(full);
     if (pos.lat == null) throw new Error("Link không có vị trí, thử mở link trên máy rồi copy lại.");
     return { ...pos, province: provinceAt(pos.lat, pos.lng) || "", url: u };
@@ -479,7 +487,7 @@
     if (!q) return f.name.focus();
     out.replaceChildren(el("p", { className: "muted small", textContent: "Đang tìm…" }));
     try {
-      if (isMapsUrl(q)) return setPos(await fromMapsLink(q));
+      if (isMapsUrl(q)) return setPos(await fromMapsLink(q), true);
       const only = f.province.value;
       const found = (await searchSpots(q)).filter((r) => r.province && (!only || r.province === only)).slice(0, 6);
       out.replaceChildren(...found.map((r) => {
@@ -490,18 +498,28 @@
     } catch (err) { out.replaceChildren(el("p", { className: "muted small", textContent: err.message })); }
   };
   $("placeForm").name.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("placeFind").click(); } });
+  // Paste a Google Maps link: name, position, province, area and kind fill in by themselves
+  for (const box of [$("placeForm").name, $("placeForm").url]) {
+    box.addEventListener("paste", () => setTimeout(async () => {
+      const u = box.value.trim();
+      if (!isMapsUrl(u)) return;
+      $("placePin").textContent = "Đang đọc link…";
+      try { setPos(await fromMapsLink(u), true); toast("✓ Đã lấy thông tin từ link"); }
+      catch (err) { showPin(); toast(err.message); }
+    }));
+  }
   $("placeSave").onclick = async () => {
     const f = $("placeForm");
     // A link pasted as the name or in the link box also gives the position
     for (const u of [f.name.value.trim(), f.url.value.trim()]) {
-      if (isMapsUrl(u) && u !== editing.draft.url) { try { setPos(await fromMapsLink(u)); } catch {} }
+      if (isMapsUrl(u) && u !== editing.draft.url && editing.draft.lat == null) { try { setPos(await fromMapsLink(u), true); } catch {} }
     }
     const name = titleCase(isMapsUrl(f.name.value) ? "" : f.name.value);
     if (!name) return toast("Nhập tên địa điểm");
     if (!f.province.value) return toast("Chọn tỉnh");
     const url = f.url.value.trim();
     const { lat = null, lng = null } = editing.draft;
-    const item = { ...editing.draft, name, province: f.province.value, group: titleCase(f.group.value), kind: f.kind.value, date: f.date.value || editing.draft.date || null,
+    const item = { ...editing.draft, name, province: f.province.value, group: titleCase(f.group.value), kind: f.kind.value,
       note: f.note.value.trim(), url: isMapsUrl(url) ? url : "", lat, lng };
     const next = editing.place ? places.map((y) => (y === editing.place ? item : y)) : [...places, item];
     $("placeDlg").close();
@@ -689,7 +707,7 @@
     const list = shown();
     $("visitedText").textContent = `Đã đến ${visited.size}/34 tỉnh, thành phố · ${list.length} ảnh${year ? ` · năm ${year}` : ""}`;
     // Year chips, only when photos span more than one year
-    const years = [...new Set([...photos.map((p) => p.takenAt), ...places.map((x) => x.date)].map((d) => (d || "").slice(0, 4)).filter(Boolean))].sort().reverse();
+    const years = [...new Set(photos.map((p) => (p.takenAt || "").slice(0, 4)).filter(Boolean))].sort().reverse();
     $("years").hidden = years.length < 2;
     $("years").replaceChildren(...["", ...years].map((y) => {
       const b = el("button", { type: "button", className: y === year ? "on" : "", textContent: y || "Tất cả" });
