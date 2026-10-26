@@ -489,3 +489,19 @@ button.place-row:hover { background: var(--soft); }
 .add-choices button svg { grid-row: 1 / 3; margin: 0; }
 /* Phones: "+ Thêm" and "Chọn nhiều" live in the menu only */
 @media (max-width: 640px) { #adminActions { display: none !important; } }
+
+/* Phones: the settings button is a ☰ menu that turns into ✕ while open */
+.burger { display: none; position: relative; width: 16px; height: 12px; }
+.burger i { position: absolute; left: 0; width: 100%; height: 1.5px; border-radius: 2px; background: currentColor; transition: transform .25s ease, opacity .2s ease, top .25s ease; }
+.burger i:nth-child(1) { top: 0; }
+.burger i:nth-child(2) { top: 5px; }
+.burger i:nth-child(3) { top: 10px; }
+.open .burger i:nth-child(1) { top: 5px; transform: rotate(45deg); }
+.open .burger i:nth-child(2) { opacity: 0; }
+.open .burger i:nth-child(3) { top: 5px; transform: rotate(-45deg); }
+@media (max-width: 640px) {
+  #settingsBtn svg { display: none; }
+  #settingsBtn .burger { display: block; }
+  /* stays above the menu overlay so the ✕ is visible and taps close the menu */
+  #settingsBtn.open { position: relative; z-index: 2; }
+}

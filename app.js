@@ -382,7 +382,9 @@
     $("plans").replaceChildren(...(plans.length ? [el("p", { className: "settings-label", textContent: `Đang có ${plans.length} nơi` }), chips] : []));
   }
 
-  $("settingsBtn").onclick = () => $("settingsDlg").showModal();
+  $("settingsBtn").onclick = () => { $("settingsDlg").showModal(); $("settingsBtn").classList.add("open"); };
+  // Menu icon turns back from ✕ to ☰ whenever the menu closes
+  $("settingsDlg").addEventListener("close", () => $("settingsBtn").classList.remove("open"));
   // Click outside a dialog (on the dark overlay) closes it, except while photos are uploading
   document.querySelectorAll("dialog.dlg").forEach((d) => d.addEventListener("click", (e) => {
     if (e.target === d && !(d.id === "uploadDlg" && $("uploadGo").disabled && !$("upProgress").hidden)) d.close();
