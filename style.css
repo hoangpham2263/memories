@@ -487,3 +487,5 @@ button.place-row:hover { background: var(--soft); }
 .add-choices { grid-template-columns: 1fr; gap: 6px; }
 .add-choices button { min-height: 0; display: grid; grid-template-columns: 20px minmax(0, 1fr); grid-template-rows: auto auto; column-gap: 12px; row-gap: 0; align-items: center; padding: 10px 12px; }
 .add-choices button svg { grid-row: 1 / 3; margin: 0; }
+/* Phones: "+ Thêm" and "Chọn nhiều" live in the menu only */
+@media (max-width: 640px) { #adminActions { display: none !important; } }
