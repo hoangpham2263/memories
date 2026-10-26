@@ -511,3 +511,7 @@ button.place-row:hover { background: var(--soft); }
   .map { height: 620px; }
   .side { max-height: 620px; }
 }
+/* Indented rows keep inside the panel: no sideways scroll */
+.place-area > .place-area-name ~ *, .place-area > .area-head ~ * { width: auto; max-width: calc(100% - 14px); }
+.place-area > .place-area-name ~ .place-row, .place-area > .area-head ~ .place-row, .place-area > .area-head ~ .place-add, .place-area > .place-area-name ~ .place-add { width: calc(100% - 14px); }
+.side-body { overflow-x: hidden; }
