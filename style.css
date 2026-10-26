@@ -525,3 +525,10 @@ button.place-row:hover { background: var(--soft); }
 .grip { display: grid; place-items: center; color: var(--muted); opacity: .55; cursor: grab; }
 .place-row.can-drag:hover .grip { opacity: 1; }
 .place-row.dragging .grip { cursor: grabbing; }
+
+/* Crisper text: no faded labels */
+.province-label { opacity: 1; color: #475569; -webkit-font-smoothing: antialiased; }
+.province-label.visited { color: var(--fg); font-weight: 500; }
+.island-label { color: #475569; }
+.place-area-name { color: #475569; }
+@media (prefers-color-scheme: dark) { .province-label, .island-label, .place-area-name { color: #cbd5e1; } }
