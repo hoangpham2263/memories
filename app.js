@@ -432,6 +432,10 @@
     if (admin) {
       // Drag to reorder, or onto another area to move it there
       row.draggable = true;
+      row.classList.add("can-drag");
+      // Grip handle: the usual six dots that say "drag me"
+      row.prepend(el("span", { className: "grip", title: "Kéo để sắp xếp", ariaHidden: "true",
+        innerHTML: '<svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor"><circle cx="2" cy="2" r="1.5"/><circle cx="8" cy="2" r="1.5"/><circle cx="2" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="2" cy="14" r="1.5"/><circle cx="8" cy="14" r="1.5"/></svg>' }));
       row.addEventListener("dragstart", (e) => { dragging = x; row.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", x.name); });
       row.addEventListener("dragend", () => { dragging = null; row.classList.remove("dragging"); document.querySelectorAll(".drop-before, .drop-in").forEach((n) => n.classList.remove("drop-before", "drop-in")); });
       row._place = x;

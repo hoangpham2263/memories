@@ -521,3 +521,7 @@ button.place-row:hover { background: var(--soft); }
 .place-row.dragging { opacity: .4; }
 .place-row.drop-before { box-shadow: 0 -2px 0 var(--primary); }
 .place-area.drop-in { outline: 2px dashed var(--primary); outline-offset: 4px; border-radius: 8px; }
+.place-row.can-drag { grid-template-columns: 12px minmax(0, 1fr) auto; cursor: default; }
+.grip { display: grid; place-items: center; color: var(--muted); opacity: .55; cursor: grab; }
+.place-row.can-drag:hover .grip { opacity: 1; }
+.place-row.dragging .grip { cursor: grabbing; }
