@@ -515,3 +515,9 @@ button.place-row:hover { background: var(--soft); }
 .place-area > .place-area-name ~ *, .place-area > .area-head ~ * { width: auto; max-width: calc(100% - 14px); }
 .place-area > .place-area-name ~ .place-row, .place-area > .area-head ~ .place-row, .place-area > .area-head ~ .place-add, .place-area > .place-area-name ~ .place-add { width: calc(100% - 14px); }
 .side-body { overflow-x: hidden; }
+
+/* Drag & drop places */
+.place-row[draggable="true"] { cursor: grab; }
+.place-row.dragging { opacity: .4; }
+.place-row.drop-before { box-shadow: 0 -2px 0 var(--primary); }
+.place-area.drop-in { outline: 2px dashed var(--primary); outline-offset: 4px; border-radius: 8px; }

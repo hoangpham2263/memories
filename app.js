@@ -428,7 +428,46 @@
       edit.onclick = () => editPlace(x);
       acts.append(edit);
     }
-    return el("div", { className: "place-row" }, body, acts);
+    const row = el("div", { className: "place-row" }, body, acts);
+    if (admin) {
+      // Drag to reorder, or onto another area to move it there
+      row.draggable = true;
+      row.addEventListener("dragstart", (e) => { dragging = x; row.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", x.name); });
+      row.addEventListener("dragend", () => { dragging = null; row.classList.remove("dragging"); document.querySelectorAll(".drop-before, .drop-in").forEach((n) => n.classList.remove("drop-before", "drop-in")); });
+      row._place = x;
+    }
+    return row;
+  }
+
+  // ---------- drag & drop places between areas ----------
+  let dragging = null;
+  function dropZone(box, province, area) {
+    box.addEventListener("dragover", (e) => {
+      if (!dragging) return;
+      e.preventDefault();
+      document.querySelectorAll(".drop-before, .drop-in").forEach((n) => n.classList.remove("drop-before", "drop-in"));
+      const over = e.target.closest(".place-row");
+      if (over && over._place !== dragging) over.classList.add("drop-before");
+      else box.classList.add("drop-in");
+    });
+    box.addEventListener("dragleave", (e) => { if (!box.contains(e.relatedTarget)) box.classList.remove("drop-in"); });
+    box.addEventListener("drop", async (e) => {
+      if (!dragging) return;
+      e.preventDefault();
+      const moved = dragging;
+      const before = e.target.closest(".place-row")?._place;
+      if (before === moved) return;
+      const item = { ...moved, province, group: area };
+      const rest = places.filter((y) => y !== moved);
+      // Before the row it was dropped on, else after the last place of that area
+      let at = before ? rest.indexOf(before) : -1;
+      if (at < 0) {
+        const last = rest.map((y, i) => (y.province === province && (y.group || "") === area ? i : -1)).filter((i) => i >= 0).pop();
+        at = last == null ? rest.length : last + 1;
+      }
+      rest.splice(at, 0, item);
+      await savePlaces(rest, (moved.group || "") === area ? "✓ Đã đổi thứ tự" : `✓ Đã chuyển sang ${titleCase(area) || "Khác"}`);
+    });
   }
 
   // Quick add inside an area: type a name (or paste a Maps link) and Enter; the position is looked up on its own
@@ -502,11 +541,14 @@
     if (admin && province) for (const a of newAreas[province] || []) if (!areas.some(([n]) => n === a)) areas.push([a, []]);
     // Area headings only once some place has an area
     const grouped = areas.some(([n]) => n);
-    const tree = el("div", { className: "place-tree" }, ...areas.map(([area, list]) =>
-      el("div", { className: "place-area" },
+    const tree = el("div", { className: "place-tree" }, ...areas.map(([area, list]) => {
+      const box = el("div", { className: "place-area" },
         grouped ? areaHead(province, area, list) : null,
         ...list.map(placeRow),
-        admin && province ? addRow(province, area, `Thêm vào ${titleCase(area) || "đây"}: tên hoặc link Maps`) : null)));
+        admin && province ? addRow(province, area, `Thêm vào ${titleCase(area) || "đây"}: tên hoặc link Maps`) : null);
+      if (admin && province) dropZone(box, province, area);
+      return box;
+    }));
     if (admin && province) {
       // Start a new area: name it, then add places into it
       const input = el("input", { placeholder: "Khu vực mới (vd: Long Hải)", autocomplete: "off" });
