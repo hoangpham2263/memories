@@ -35,7 +35,6 @@
           </div>
           <div class="actions" id="adminActions" hidden>
             <button id="selectBtn" type="button">Chọn nhiều</button>
-            <button id="plansBtn" type="button">Sắp đi</button>
             <button id="addBtn" class="primary" type="button">+ Thêm</button>
           </div>
         </div>
@@ -134,7 +133,6 @@
         <div class="settings-list m-only">
           <button type="button" data-go="addBtn">+ Thêm</button>
           <button type="button" data-go="selectBtn">Chọn nhiều</button>
-          <button type="button" data-go="plansBtn">Sắp đi</button>
         </div>
         <span class="settings-label">Google Drive</span>
         <p class="settings-status"><span class="admin-dot"></span><span id="adminText"></span></p>
@@ -147,14 +145,6 @@
       </form>
     </dialog>
 
-    <!-- Places to go next -->
-    <dialog id="plansDlg" class="dlg">
-      <form method="dialog" class="dlg-box">
-        <div class="dlg-head"><strong>Sắp đi</strong><button class="icon" value="cancel" aria-label="Đóng">✕</button></div>
-        <div id="plans" class="plans"></div>
-      </form>
-    </dialog>
-
     <!-- The one place to add anything: pick what, then fill it in -->
     <dialog id="addDlg" class="dlg dlg-sm">
       <form method="dialog" class="dlg-box">
@@ -162,7 +152,7 @@
         <div id="addChoices" class="add-choices">
           <button type="button" data-add="photo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h3l2-2h6l2 2h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg><strong>Ảnh</strong><small>Tải ảnh lên bản đồ</small></button>
           <button type="button" data-add="place"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg><strong>Địa điểm đã đi</strong><small>Chỗ ăn, ở, tham quan</small></button>
-          <button type="button" data-add="plan"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4h11l-1.5 4L16 12H5"/></svg><strong>Nơi sắp đi</strong><small>Nơi muốn đi sắp tới</small></button>
+          <button type="button" data-add="plan"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4h11l-1.5 4L16 12H5"/></svg><strong>Nơi sắp đi</strong><small>Thêm, xem danh sách sắp đi</small></button>
           <button type="button" data-add="province"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg><strong>Tỉnh đã đến</strong><small>Tích tỉnh đã đến</small></button>
         </div>
         <div id="addSpot" class="add-spot" hidden>
@@ -174,6 +164,7 @@
             <button id="addSearch" type="button">Tìm</button>
           </div>
           <div id="addResults" class="place-results"></div>
+          <div id="plans" class="plans" hidden></div>
         </div>
       </form>
     </dialog>
@@ -246,6 +237,6 @@
     <script src="vendor/exifr.full.umd.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script>
-    <script src="app.js?v=71"></script>
+    <script src="app.js?v=72"></script>
   </body>
 </html>

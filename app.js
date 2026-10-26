@@ -378,7 +378,7 @@
       }
       return chip;
     }));
-    $("plans").replaceChildren(plans.length ? chips : el("p", { className: "empty", textContent: "Chưa có nơi sắp đi. Thêm ở nút \"+ Thêm\"." }));
+    $("plans").replaceChildren(...(plans.length ? [el("p", { className: "settings-label", textContent: `Đang có ${plans.length} nơi` }), chips] : []));
   }
 
   $("settingsBtn").onclick = () => $("settingsDlg").showModal();
@@ -388,7 +388,6 @@
   }));
   // Menu shortcuts to the map actions (phones)
   document.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => { $("settingsDlg").close(); $(b.dataset.go).click(); }));
-  $("plansBtn").onclick = () => { renderPlans(); $("plansDlg").showModal(); };
 
   // ---------- places: areas, notes, Google Maps ----------
   // Place names in one style: each all-lowercase word gets a capital (long hải → Long Hải); words already
@@ -1170,6 +1169,9 @@
     if ($("addProvince").options.length < 2) provinceOptions($("addProvince"), "", "Tỉnh: tự nhận theo vị trí");
     $("addProvince").value = provinces.includes(selected) ? selected : "";
     $("addMonthRow").hidden = mode !== "plan";
+    // Places to go: the current list (✓ đã đi / ✕ bỏ) sits under the search
+    $("plans").hidden = mode !== "plan";
+    if (mode === "plan") renderPlans();
     $("addQuery").value = "";
     $("addResults").replaceChildren();
     $("addQuery").focus();
