@@ -473,3 +473,4 @@ button.place-row:hover { background: var(--soft); }
 .quick-add input { border-style: dashed; }
 .new-area { padding-top: 6px; border-top: 1px dashed var(--border); }
 .quick-open { justify-self: start; padding: 2px 0; font-size: 13px; }
+@media (max-width: 640px) { .timeline .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; } }
