@@ -448,7 +448,6 @@ button.place-row:hover { background: var(--soft); }
 .place-map:hover { background: var(--soft); color: var(--primary); }
 .place-box { display: grid; gap: 10px; }
 
-}
 
 /* "+ Thêm" choices */
 .add-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -457,3 +456,7 @@ button.place-row:hover { background: var(--soft); }
 .add-choices small { color: var(--muted); font-size: 12px; }
 .add-spot { display: grid; gap: 10px; }
 .add-spot .link { justify-self: start; }
+.add-choices button { min-height: 96px; align-content: start; gap: 4px; border-radius: 10px; }
+.add-choices button svg { color: var(--primary); margin-bottom: 4px; }
+.add-choices button:hover { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 5%, var(--bg)); }
+.add-choices button { justify-content: start; justify-items: start; }
