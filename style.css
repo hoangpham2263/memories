@@ -505,3 +505,9 @@ button.place-row:hover { background: var(--soft); }
   /* stays above the menu overlay so the ✕ is visible and taps close the menu */
   #settingsBtn.open { position: relative; z-index: 2; }
 }
+/* Desktop: map box sized to Vietnam's shape (no wide empty sea), the list gets the rest */
+@media (min-width: 901px) {
+  .map-layout { grid-template-columns: minmax(0, 560px) minmax(0, 1fr); }
+  .map { height: 620px; }
+  .side { max-height: 620px; }
+}

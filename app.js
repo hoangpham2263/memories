@@ -189,7 +189,7 @@
 
   function initMap() {
     // Zoom only with the buttons: wheel / trackpad / pinch keep scrolling the page; drag to pan (not on touch, so the page still scrolls)
-    map = L.map("map", { zoomControl: false, attributionControl: false, zoomSnap: 0.25, minZoom: 4.5, maxZoom: 13, scrollWheelZoom: false, touchZoom: false, doubleClickZoom: false, boxZoom: false, keyboard: false, dragging: !L.Browser.mobile });
+    map = L.map("map", { zoomControl: false, attributionControl: false, zoomSnap: 0.1, zoomDelta: 0.5, minZoom: 4.5, maxZoom: 13, scrollWheelZoom: false, touchZoom: false, doubleClickZoom: false, boxZoom: false, keyboard: false, dragging: !L.Browser.mobile });
     // Zoom in / out / whole country, styled like the site's buttons
     const Zoom = L.Control.extend({
       options: { position: "topleft" },
