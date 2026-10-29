@@ -38,9 +38,10 @@ a { color: var(--primary); }
 h2 { margin: 0; font-size: 16px; font-weight: 500; }
 
 /* Container like Tailwind's */
-.wrap { width: 100%; max-width: 1280px; margin: 0 auto; padding: 32px 16px 48px; display: grid; gap: 16px; }
-@media (min-width: 640px) { .wrap { padding-left: 24px; padding-right: 24px; } }
-@media (min-width: 1024px) { .wrap { padding-left: 32px; padding-right: 32px; } }
+.wrap { width: 100%; max-width: 1280px; margin: 0 auto; padding: 32px 16px 48px; display: grid; gap: 40px; }
+.content { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@media (min-width: 640px) { .wrap { padding-left: 24px; padding-right: 24px; gap: 60px; } }
+@media (min-width: 1024px) { .wrap { padding-left: 32px; padding-right: 32px; gap: 80px; } }
 
 .top { display: flex; align-items: center; gap: 12px; }
 .top-text { flex: 1; min-width: 0; }
@@ -291,7 +292,8 @@ strong, b, th, summary, .dlg-head strong { font-weight: 500; }
 
 /* ---------- Mobile ---------- */
 @media (max-width: 640px) {
-  .wrap { padding-top: 16px; gap: 12px; }
+  .wrap { padding-top: 16px; }
+  .content { gap: 12px; }
   .top { gap: 8px; }
   .brand img { width: 32px; height: 32px; }
   h1 { font-size: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
