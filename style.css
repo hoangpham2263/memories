@@ -534,3 +534,15 @@ button.place-row:hover { background: var(--soft); }
 .island-label { color: #475569; }
 .place-area-name { color: #475569; }
 @media (prefers-color-scheme: dark) { .province-label, .island-label, .place-area-name { color: #cbd5e1; } }
+
+/* Phones: one compact header bar across the full width, stuck to the top (same in every tool) */
+@media (max-width: 639px) {
+  .wrap { padding-top: 0; }
+  .top { position: sticky; top: 0; z-index: 1100; flex-wrap: nowrap; align-items: center; gap: 10px; margin: 0 -16px; padding: 10px 16px;
+    background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
+  .top-text { flex: 1; min-width: 0; }
+  .brand img { width: 32px; height: 32px; }
+  h1 { font-size: 18px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .back { padding: 6px 8px; font-size: 16px; }
+  .back span { display: none; }
+}
