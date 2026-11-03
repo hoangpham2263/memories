@@ -1,31 +1,31 @@
 # Hoang's Memories
 
-Bản đồ hành trình: những nơi đã đi qua ở Việt Nam, lưu lại bằng ảnh.
+A travel map of the places I have visited in Vietnam, kept through photos.
 
 **Website:** https://hoangpham.is-a.dev/memories/
 
-## Tính năng
+## Features
 
-- Bản đồ Việt Nam **34 tỉnh, thành phố** (sau sáp nhập 2025), có quần đảo Hoàng Sa và Trường Sa. Tỉnh đã đến được tô màu, đếm "Đã đến x/34".
-- Bấm vào tỉnh để xem ảnh ở nơi đó; dòng thời gian theo tháng.
-- Upload ảnh (chế độ quản lý): đọc GPS và ngày chụp từ EXIF, tự gán tỉnh; ảnh không có GPS thì chọn tỉnh. Hỗ trợ HEIC, tự nén về tối đa 2560px.
-- Ảnh lưu trong Google Drive (thư mục riêng), qua Cloudflare Worker giữ kết nối lâu dài — không phải đăng nhập lại.
+- Map of Vietnam's **34 provinces and cities** (after the 2025 merger), including the Hoàng Sa (Paracel) and Trường Sa (Spratly) archipelagos. Visited provinces are colored, with a "Visited x/34" counter.
+- Click a province to see its photos, with a timeline by month.
+- Photo upload (admin mode): reads GPS and capture date from EXIF and assigns the province automatically; photos without GPS let you pick a province. Supports HEIC and compresses automatically to at most 2560px.
+- Photos are stored in Google Drive (a private folder) through a Cloudflare Worker that keeps a long-lived connection, so there is no need to sign in again.
 
-## Cấu trúc
+## Structure
 
-| File | Vai trò |
+| File | Purpose |
 |---|---|
-| `index.html`, `style.css`, `app.js` | Giao diện |
-| `vn-34.json` | Ranh giới 34 tỉnh, thành phố (gộp từ 63 tỉnh cũ theo Nghị quyết 202/2025/QH15) |
-| `vendor/exifr.full.umd.js` | Đọc EXIF / GPS |
-| `worker/` | Cloudflare Worker: Google Drive, danh sách ảnh (KV), proxy ảnh |
+| `index.html`, `style.css`, `app.js` | User interface |
+| `vn-34.json` | Boundaries of the 34 provinces and cities (merged from the former 63 provinces under Resolution 202/2025/QH15) |
+| `vendor/exifr.full.umd.js` | Reads EXIF and GPS data |
+| `worker/` | Cloudflare Worker: Google Drive, photo list (KV), image proxy |
 
-## Cài đặt Worker (một lần)
+## Worker setup (once)
 
-1. Google Cloud Console → bật **Google Drive API** → tạo **OAuth client ID** loại *Web application*, thêm Authorized redirect URI:
+1. Google Cloud Console → enable the **Google Drive API** → create an **OAuth client ID** of type *Web application* and add this Authorized redirect URI:
    `https://memories-api.hoangpham2263.workers.dev/oauth/callback`
-2. OAuth consent screen → **Publish app** (In production) để refresh token không hết hạn sau 7 ngày.
-3. Đặt secrets:
+2. OAuth consent screen → **Publish app** (In production) so the refresh token does not expire after 7 days.
+3. Set the secrets:
 
 ```bash
 cd worker
@@ -35,8 +35,8 @@ npx wrangler secret put ADMIN_PASSWORD
 npx wrangler deploy
 ```
 
-4. Mở trang, bấm biểu tượng ổ khóa, nhập mật khẩu quản lý → trang tự mở bước kết nối Google Drive.
+4. Open the page, click the lock icon and enter the admin password. The page then opens the Google Drive connection step automatically.
 
-## Công nghệ
+## Tech stack
 
-HTML, CSS, JavaScript thuần · Leaflet · exifr · heic2any · GitHub Pages · Cloudflare Workers + KV · Google Drive API
+Plain HTML, CSS and JavaScript · Leaflet · exifr · heic2any · GitHub Pages · Cloudflare Workers + KV · Google Drive API
