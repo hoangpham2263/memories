@@ -2,6 +2,17 @@
 // Photos and their metadata are served by the Cloudflare Worker in worker/ (Google Drive behind it).
 (() => {
   const API = "https://memories-api.hoangpham2263.workers.dev";
+  // Trips live in a Google Sheet: one tab = one trip. A trip that has not ended yet shows as "Sắp đi" on the map.
+  const PLANS_API = "https://script.google.com/macros/s/AKfycby525e2S8Pe4gU2tNHIh3Ps22yvmvaO6vCnPr__m_xm_40rdfI10hR2YFYM8eZY9t_oxw/exec";
+  const loadPlans = async () => {
+    const d = await (await fetch(PLANS_API)).json();
+    const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10); // Vietnam date
+    return (d.trips || [])
+      .filter((t) => String(t.ngayVe || t.ngayDi || "9999") >= today)
+      .map((t) => ({ name: String(t.ten || "").trim(), province: t.tinh || "", lat: Number(t.lat), lng: Number(t.lng), date: t.ngayDi ? String(t.ngayDi) : null, note: t.ghiChu || "" }))
+      .filter((r) => r.name && r.lat && r.lng);
+  };
+  const SHEET_URL = "https://docs.google.com/spreadsheets/d/11qEAvbnRwZB4Mpv4b_tkw9gagU6Z2N0Nh5gRHKeKNLU/edit"; // the trips sheet (private, owner only)
   const ABROAD = "Nước ngoài";
   const OTHER = "Other";
   const TRIP_GAP_DAYS = 2; // photos in the same province within 2 days belong to one trip
@@ -363,40 +374,10 @@
     } catch { return []; }
   }
 
-  // ---------- places to go next ----------
-  async function savePlans(next, msg) {
-    try { plans = await api("/api/plans", jsonBody("PUT", { places: next })); renderAll(); toast(msg); }
-    catch (err) { toast(err.message); }
-  }
+  // ---------- places to go next (read-only, from the sheet) ----------
   // 2026-12-05 → 05/12/2026 (older entries hold only the month: 2026-12 → 12/2026)
   const monthText = (m) => (!m ? "" : m.length > 7 ? `${m.slice(8)}/${m.slice(5, 7)}/${m.slice(0, 4)}` : `${+m.slice(5)}/${m.slice(0, 4)}`);
-  function renderPlans() {
-    // Soonest planned date first, places without a date last
-    const sorted = [...plans].sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999"));
-    const chips = el("div", { className: "chip-row" }, ...sorted.map((x) => {
-      const chip = el("span", { className: "chip plan" }, el("span", { textContent: titleCase(x.name) }),
-        x.date || x.province ? el("small", { textContent: [monthText(x.date), x.province].filter(Boolean).join(" · ") }) : null);
-      if (admin) {
-        const done = el("button", { type: "button", textContent: "✓", title: "Đã đi: chuyển sang nơi đã đến" });
-        done.onclick = async () => {
-          try {
-            [places, plans] = await Promise.all([
-              api("/api/places", jsonBody("PUT", { places: [...places, x] })),
-              api("/api/plans", jsonBody("PUT", { places: plans.filter((y) => y !== x) })),
-            ]);
-            renderAll();
-            toast(`✓ Đã đi ${x.name}`);
-          } catch (err) { toast(err.message); }
-        };
-        const del = el("button", { type: "button", textContent: "✕", title: "Bỏ" });
-        del.onclick = () => savePlans(plans.filter((y) => y !== x), `Đã bỏ ${x.name}`);
-        chip.append(done, del);
-      }
-      return chip;
-    }));
-    $("plans").replaceChildren(...(plans.length ? [el("p", { className: "settings-label", textContent: `Đang có ${plans.length} nơi` }), chips] : []));
-  }
-
+  $("sheetBtn").onclick = () => window.open(SHEET_URL, "_blank", "noopener");
   $("settingsBtn").onclick = () => { $("settingsDlg").showModal(); $("settingsBtn").classList.add("open"); };
   // Menu icon turns back from ✕ to ☰ whenever the menu closes
   $("settingsDlg").addEventListener("close", () => $("settingsBtn").classList.remove("open"));
@@ -923,7 +904,6 @@
     renderStats();
     renderSide();
     renderTrips();
-    renderPlans();
     renderTimeline();
     refreshMap();
   }
@@ -1130,7 +1110,6 @@
       $("driveLink").hidden = !status.folder;
       if (status.folder) $("driveLink").href = `https://drive.google.com/drive/folders/${status.folder}`;
     }
-    renderPlans();
   }
 
   // reload: fetch the list again to include private photos (not needed at start, the first load already sent the key)
@@ -1191,7 +1170,7 @@
     if (Date.now() - lastSync < 20000 || !geo) return;
     lastSync = Date.now();
     try {
-      const next = await Promise.all([api("/api/photos"), api("/api/visited"), api("/api/meta"), api("/api/places"), api("/api/plans")]);
+      const next = await Promise.all([api("/api/photos"), api("/api/visited"), api("/api/meta"), api("/api/places"), loadPlans()]);
       if (JSON.stringify(next) === JSON.stringify([photos, manual, meta, places, plans])) return;
       [photos, manual, meta, places, plans] = next;
       renderAll();
@@ -1379,17 +1358,13 @@
   }
   function showSpot(mode) {
     addMode = mode;
-    $("addTitle").textContent = mode === "plan" ? "Thêm nơi sắp đi" : "Thêm địa điểm đã đi";
+    $("addTitle").textContent = "Thêm địa điểm đã đi";
     $("addChoices").hidden = true;
     $("addSpot").hidden = false;
-    // Places belong to a province (preset to the one open on the map); plans take theirs from the search result
+    // Places belong to a province (preset to the one open on the map)
     $("addProvince").hidden = mode !== "place";
     if ($("addProvince").options.length < 2) provinceOptions($("addProvince"), "", "Tỉnh: tự nhận theo vị trí");
     $("addProvince").value = provinces.includes(selected) ? selected : "";
-    $("addMonthRow").hidden = mode !== "plan";
-    // Places to go: the current list (✓ đã đi / ✕ bỏ) sits under the search
-    $("plans").hidden = mode !== "plan";
-    if (mode === "plan") renderPlans();
     $("addQuery").value = "";
     $("addResults").replaceChildren();
     $("addQuery").focus();
@@ -1406,9 +1381,6 @@
   // Found or pasted → a place opens its details form, a plan is saved straight away
   function addSpot({ name, lat, lng, province, url }) {
     $("addDlg").close();
-    if (addMode === "plan") {
-      return savePlans([...plans, { name: titleCase(name), province: province || "", lat, lng, date: $("addMonth").value || null }], `✓ Đã thêm ${titleCase(name)}`);
-    }
     editPlace(null, { name, lat, lng, url: url || "", province: $("addProvince").value || province || "" });
   }
   async function addSearch() {
@@ -1610,7 +1582,7 @@
       api("/api/visited").catch(() => []),
       api("/api/meta").catch(() => ({ trips: {}, covers: {} })),
       api("/api/places").catch(() => []),
-      api("/api/plans").catch(() => []),
+      loadPlans().catch(() => []),
     ]);
     dataP.catch(() => {});
     const adminP = checkAdmin(false);

@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://memories-api.hoangpham2263.workers.dev" crossorigin />
     <link rel="preload" href="vn-34.json" as="fetch" crossorigin />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-    <link rel="stylesheet" href="style.css?v=87" />
+    <link rel="stylesheet" href="style.css?v=88" />
   </head>
   <body>
     <main class="wrap">
@@ -36,6 +36,7 @@
             <div id="years" class="years" hidden></div>
           </div>
           <div class="actions" id="adminActions" hidden>
+            <button id="sheetBtn" type="button" title="Mở Google Sheet lịch trình các chuyến đi">Lịch trình ↗</button>
             <button id="selectBtn" type="button">Chọn nhiều</button>
             <button id="addBtn" class="primary" type="button">+ Thêm</button>
           </div>
@@ -154,19 +155,16 @@
         <div class="dlg-head"><strong id="addTitle">Thêm mới</strong><button class="icon" value="cancel" aria-label="Đóng">✕</button></div>
         <div id="addChoices" class="add-choices">
           <button type="button" data-add="photo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h3l2-2h6l2 2h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg><strong>Ảnh</strong><small>Tải ảnh lên bản đồ</small></button>
-          <button type="button" data-add="plan"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4h11l-1.5 4L16 12H5"/></svg><strong>Nơi sắp đi</strong><small>Thêm, xem danh sách sắp đi</small></button>
           <button type="button" data-add="province"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg><strong>Tỉnh đã đến</strong><small>Tích tỉnh đã đến</small></button>
         </div>
         <div id="addSpot" class="add-spot" hidden>
           <button id="addBack" type="button" class="link">← Chọn lại</button>
           <select id="addProvince" aria-label="Tỉnh"></select>
-          <label id="addMonthRow" class="plan-when"><span>Ngày dự định</span><input id="addMonth" type="date" /></label>
           <div class="place-add">
             <input id="addQuery" placeholder="Tìm tên nơi hoặc dán link Google Maps" autocomplete="off" />
             <button id="addSearch" type="button">Tìm</button>
           </div>
           <div id="addResults" class="place-results"></div>
-          <div id="plans" class="plans" hidden></div>
         </div>
       </form>
     </dialog>
@@ -245,6 +243,6 @@
     <script src="vendor/exifr.full.umd.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script>
-    <script src="app.js?v=84"></script>
+    <script src="app.js?v=86"></script>
   </body>
 </html>
