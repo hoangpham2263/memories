@@ -911,25 +911,45 @@
     }
   }
 
-  // Album "Em Thóc": its own section, newest month first, with a photo count; hidden when empty
+  // Album "Em Thóc": one card; tapping it opens the whole album full-screen, month by month
   const monthName = (m) => (m === "?" ? "Chưa rõ ngày" : `Tháng ${+m.slice(5)}/${m.slice(0, 4)}`);
+  const kidsOrder = () => [...kids].sort((x, y) => (y.takenAt || "").localeCompare(x.takenAt || "") || x.name.localeCompare(y.name));
   function renderKids() {
     const card = $("kidsCard");
     card.hidden = !kids.length;
     if (!kids.length) return;
-    $("kidsCount").textContent = `${kids.length} ảnh`;
-    const order = [...kids].sort((a, b) => (b.takenAt || "").localeCompare(a.takenAt || ""));
+    const order = kidsOrder();
+    const dated = order.filter((p) => p.takenAt);
+    const videos = kids.filter((p) => p.video).length;
+    const range = dated.length ? `${monthText(dated[dated.length - 1].takenAt.slice(0, 7))} – ${monthText(dated[0].takenAt.slice(0, 7))}` : "";
+    const cover = order.find((p) => !p.video) || order[0];
+    const img = lazyImg(true, { alt: "" });
+    setImg(img, cover, "thumb");
+    $("kidsOpen").replaceChildren(
+      el("span", { className: "kids-cover" }, img),
+      el("span", { className: "kids-meta" },
+        el("strong", { textContent: "Em Thóc" }),
+        el("span", { className: "muted small", textContent: `${kids.length - videos} ảnh${videos ? ` · ${videos} video` : ""}` }),
+        range ? el("span", { className: "muted small", textContent: range }) : null),
+      el("span", { className: "kids-go", textContent: "Xem tất cả ›" }));
+    if ($("kidsDlg").open) renderKidsAlbum();
+  }
+  function renderKidsAlbum() {
+    const order = kidsOrder();
     const months = new Map();
     for (const p of order) {
       const m = (p.takenAt || "").slice(0, 7) || "?";
       months.set(m, [...(months.get(m) || []), p]);
     }
-    const keys = [...months.keys()].sort((a, b) => (a === "?") - (b === "?") || b.localeCompare(a));
+    const keys = [...months.keys()].sort((x, y) => (x === "?") - (y === "?") || y.localeCompare(x));
+    $("kidsTitle").textContent = `Em Thóc · ${kids.length}`;
     $("kidsBody").replaceChildren(...keys.flatMap((m) => [
-      el("h3", { className: "kids-month", textContent: `${monthName(m)} · ${months.get(m).length}` }),
-      grid(months.get(m)),
+      el("h3", { className: "kids-month" }, monthName(m), el("span", { className: "muted small", textContent: ` ${months.get(m).length}` })),
+      el("div", { className: "grid" }, ...months.get(m).map((p) => thumbButton(p, order))),
     ]));
   }
+  $("kidsOpen").onclick = () => { renderKidsAlbum(); $("kidsDlg").showModal(); };
+  $("kidsClose").onclick = () => $("kidsDlg").close();
 
   function renderAll() {
     saveUI({ selected: provinces.concat(ABROAD, OTHER).includes(selected) ? selected : null, year });

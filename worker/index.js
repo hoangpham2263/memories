@@ -59,9 +59,20 @@ async function drive(env, path, init = {}) {
   return r;
 }
 
+// An existing folder with this name under this parent (or at the top level), so parallel requests never create twins
+async function findFolder(env, name, parentId) {
+  const esc = name.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const q = `name='${esc}' and mimeType='application/vnd.google-apps.folder' and trashed=false${parentId ? ` and '${parentId}' in parents` : ""}`;
+  const r = await drive(env, `/drive/v3/files?pageSize=10&orderBy=createdTime&fields=files(id,parents)&q=${encodeURIComponent(q)}`);
+  const files = (await r.json()).files || [];
+  return (parentId ? files[0] : files.find((f) => !(f.parents || []).length || true))?.id || null;
+}
+
 async function folderId(env) {
   const saved = await env.MEM.get("folder_id");
   if (saved) return saved;
+  const found = await findFolder(env, FOLDER_NAME, null);
+  if (found) { await env.MEM.put("folder_id", found); return found; }
   const meta = { name: FOLDER_NAME, mimeType: "application/vnd.google-apps.folder" };
   const r = await drive(env, "/drive/v3/files?fields=id", {
     method: "POST",
@@ -78,6 +89,8 @@ async function childFolder(env, parentId, name) {
   const key = `folder:${parentId}:${name}`;
   const saved = await env.MEM.get(key);
   if (saved) return saved;
+  const found = await findFolder(env, name, parentId);
+  if (found) { await env.MEM.put(key, found); return found; }
   const r = await drive(env, "/drive/v3/files?fields=id", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -281,6 +294,41 @@ ${cover ? `<meta property="og:image" content="${url.origin}/api/img/${cover}"><m
   // ----- admin only below -----
   if (!path.startsWith("/api/")) return new Response("Not found", { status: 404 });
   if (!isAdmin(req, env)) return json({ error: "Sai mật khẩu quản lý." }, 401);
+
+  // One-off tidy-up (owner only). consolidate: move these photos (and thumbnails) into their one right folder.
+  if (path === "/api/consolidate" && req.method === "POST") {
+    const { ids = [] } = await req.json();
+    const list = await readList(env);
+    let moved = 0;
+    for (const it of list.filter((p) => ids.includes(p.id))) {
+      await moveFile(env, it.fileId, await photoFolder(env, it.province, it.takenAt, it.album)).catch(() => {});
+      if (it.thumbId) await moveFile(env, it.thumbId, await thumbFolder(env)).catch(() => {});
+      moved++;
+    }
+    return json({ moved });
+  }
+  // cleanup: delete every extra root folder and every folder with no files inside (keeps the active root)
+  if (path === "/api/cleanup" && req.method === "POST") {
+    const g = async (query, fields) => (await (await drive(env, `/drive/v3/files?pageSize=1000&fields=files(${fields})&q=${encodeURIComponent(query)}`)).json()).files || [];
+    const folders = await g("mimeType='application/vnd.google-apps.folder' and trashed=false", "id,name,parents");
+    const files = await g("mimeType!='application/vnd.google-apps.folder' and trashed=false", "id,parents");
+    const active = await folderId(env);
+    const list = await readList(env);
+    const ref = new Set(list.flatMap((p) => [p.fileId, p.thumbId].filter(Boolean)));
+    const parentOf = new Map(folders.map((f) => [f.id, (f.parents || [])[0]]));
+    const rootOf = (id) => { let c = id, n = 0; while (parentOf.has(c) && parentOf.get(c) && parentOf.has(parentOf.get(c)) && n++ < 20) c = parentOf.get(c); return c; };
+    const rootsAll = folders.filter((f) => f.name === FOLDER_NAME && !parentOf.has((f.parents || [])[0]));
+    const extra = rootsAll.filter((f) => f.id !== active);
+    const blocked = extra.filter((r) => files.some((f) => ref.has(f.id) && rootOf((f.parents || [])[0]) === r.id)).map((r) => r.id);
+    const del = extra.filter((r) => !blocked.includes(r.id)).map((r) => r.id);
+    // empty folders inside the active tree
+    const used = new Set();
+    for (const f of files) { let c = (f.parents || [])[0]; while (c && !used.has(c)) { used.add(c); c = parentOf.get(c); } }
+    const empty = folders.filter((f) => f.id !== active && !used.has(f.id) && !del.includes(rootOf(f.id)) && rootOf(f.id) === active).map((f) => f.id);
+    const kill = [...del, ...empty];
+    await Promise.all(kill.slice(0, 40).map((id) => drive(env, `/drive/v3/files/${id}`, { method: "DELETE" }).catch(() => {})));
+    return json({ extraRoots: extra.length, blocked, deleted: Math.min(kill.length, 40), remaining: Math.max(0, kill.length - 40) });
+  }
 
   if (path === "/api/visited" && req.method === "PUT") {
     const { provinces = [] } = await req.json();
