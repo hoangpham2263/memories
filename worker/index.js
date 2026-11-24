@@ -88,9 +88,14 @@ async function childFolder(env, parentId, name) {
   return id;
 }
 
-// Photos: <root>/<Tỉnh>/<YYYY>/…  Thumbnails: <root>/_thumbs/…
-async function photoFolder(env, province, takenAt) {
+// Photos: <root>/<Tỉnh>/<YYYY>/…  Albums (not on the map): <root>/_albums/<Album>/<YYYY-MM>/…  Thumbnails: <root>/_thumbs/…
+async function photoFolder(env, province, takenAt, album) {
   const root = await folderId(env);
+  if (album) {
+    const month = /^\d{4}-\d{2}/.test(takenAt || "") ? takenAt.slice(0, 7) : "Other";
+    const place = await childFolder(env, await childFolder(env, root, "_albums"), album);
+    return childFolder(env, place, month);
+  }
   const year = /^\d{4}/.test(takenAt || "") ? takenAt.slice(0, 4) : "Other";
   const place = await childFolder(env, root, province || "Other");
   return childFolder(env, place, year);
@@ -137,7 +142,7 @@ async function mirrorList(env, list) {
   } catch {}
 }
 
-const FIELDS = ["title", "note", "province", "place", "takenAt", "lat", "lng", "private", "hash"];
+const FIELDS = ["title", "note", "province", "place", "takenAt", "lat", "lng", "private", "hash", "album", "video"];
 function cleanMeta(input = {}) {
   const out = {};
   for (const k of FIELDS) if (k in input) out[k] = input[k] === "" ? null : input[k];
@@ -147,6 +152,8 @@ function cleanMeta(input = {}) {
   for (const k of ["lat", "lng"]) if (out[k] != null) out[k] = Number(out[k]);
   if ("private" in out) out.private = !!out.private;
   if (out.hash) out.hash = String(out.hash).slice(0, 64);
+  if (out.album) out.album = String(out.album).slice(0, 40);
+  if ("video" in out) out.video = !!out.video;
   return out;
 }
 
@@ -345,18 +352,18 @@ ${cover ? `<meta property="og:image" content="${url.origin}/api/img/${cover}"><m
       const meta = cleanMeta(changes);
       const moving = [];
       for (const it of items) {
-        const before = `${it.province}|${(it.takenAt || "").slice(0, 4)}`;
+        const before = `${it.album || ""}|${it.province}|${(it.takenAt || "").slice(0, 7)}`;
         Object.assign(it, meta);
-        if (`${it.province}|${(it.takenAt || "").slice(0, 4)}` !== before) moving.push(it);
+        if (`${it.album || ""}|${it.province}|${(it.takenAt || "").slice(0, 7)}` !== before) moving.push(it);
       }
       // Target folders first (one per province/year, created once), then every file moves in parallel
       const folders = new Map();
       for (const it of moving) {
-        const key = `${it.province}|${(it.takenAt || "").slice(0, 4)}`;
-        if (!folders.has(key)) folders.set(key, await photoFolder(env, it.province, it.takenAt).catch(() => null));
+        const key = `${it.album || ""}|${it.province}|${(it.takenAt || "").slice(0, 7)}`;
+        if (!folders.has(key)) folders.set(key, await photoFolder(env, it.province, it.takenAt, it.album).catch(() => null));
       }
       await Promise.all(moving.map((it) => {
-        const folder = folders.get(`${it.province}|${(it.takenAt || "").slice(0, 4)}`);
+        const folder = folders.get(`${it.album || ""}|${it.province}|${(it.takenAt || "").slice(0, 7)}`);
         return folder ? moveFile(env, it.fileId, folder).catch(() => {}) : null;
       }));
     }
@@ -385,7 +392,8 @@ ${cover ? `<meta property="og:image" content="${url.origin}/api/img/${cover}"><m
     const isThumb = form.get("kind") === "thumb";
     const province = String(form.get("province") || "");
     const takenAt = String(form.get("takenAt") || "");
-    const parent = isThumb ? await thumbFolder(env) : await photoFolder(env, province, takenAt);
+    const album = String(form.get("album") || "").slice(0, 40);
+    const parent = isThumb ? await thumbFolder(env) : await photoFolder(env, province, takenAt, album);
     // "2026-10-20 · Hội An · IMG_1234.jpg" so the Drive folder reads well on its own
     const place = String(form.get("place") || "").replace(/[\\/:*?"<>|]/g, "").slice(0, 60);
     const name = isThumb ? file.name : [takenAt, place, file.name].filter(Boolean).join(" · ");
@@ -398,7 +406,7 @@ ${cover ? `<meta property="og:image" content="${url.origin}/api/img/${cover}"><m
       if (!/Drive 404/.test(e.message)) throw e;
       const keys = await env.MEM.list({ prefix: "folder:" });
       await Promise.all([...keys.keys.map((k) => env.MEM.delete(k.name)), env.MEM.delete("folder_id")]);
-      const again = isThumb ? await thumbFolder(env) : await photoFolder(env, province, takenAt);
+      const again = isThumb ? await thumbFolder(env) : await photoFolder(env, province, takenAt, album);
       id = await uploadFile(env, name, file.type || "image/jpeg", bytes, again);
     }
     return json({ id });
@@ -441,10 +449,10 @@ ${cover ? `<meta property="og:image" content="${url.origin}/api/img/${cover}"><m
     const list = await readList(env);
     const item = list.find((p) => p.id === one[1]);
     if (!item) return json({ error: "Không tìm thấy ảnh." }, 404);
-    const before = `${item.province}|${(item.takenAt || "").slice(0, 4)}`;
+    const before = `${item.album || ""}|${item.province}|${(item.takenAt || "").slice(0, 7)}`;
     Object.assign(item, cleanMeta(await req.json()));
-    if (`${item.province}|${(item.takenAt || "").slice(0, 4)}` !== before) {
-      try { await moveFile(env, item.fileId, await photoFolder(env, item.province, item.takenAt)); } catch {}
+    if (`${item.album || ""}|${item.province}|${(item.takenAt || "").slice(0, 7)}` !== before) {
+      try { await moveFile(env, item.fileId, await photoFolder(env, item.province, item.takenAt, item.album)); } catch {}
     }
     await writeList(env, list, ctx);
     return json(item);

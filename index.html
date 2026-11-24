@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://memories-api.hoangpham2263.workers.dev" crossorigin />
     <link rel="preload" href="vn-34.json" as="fetch" crossorigin />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-    <link rel="stylesheet" href="style.css?v=88" />
+    <link rel="stylesheet" href="style.css?v=90" />
   </head>
   <body>
     <main class="wrap">
@@ -73,6 +73,14 @@
           <span id="photoCount" class="muted small"></span>
         </div>
         <div id="timeline" class="timeline"></div>
+      </section>
+
+      <section class="card" id="kidsCard" hidden>
+        <div class="sec-head">
+          <h2>Em Thóc</h2>
+          <span id="kidsCount" class="muted small"></span>
+        </div>
+        <div id="kidsBody" class="kids"></div>
       </section>
 
       <footer class="muted small">Làm bởi <a href="https://hoangpham.is-a.dev" target="_blank" rel="noopener">Phạm Quốc Hoàng</a> · MIT</footer>
@@ -220,6 +228,7 @@
         </button>
         <button class="icon viewer-nav prev" type="button" id="viewerPrev" aria-label="Ảnh trước">‹</button>
         <img id="viewerImg" alt="" />
+        <video id="viewerVid" controls playsinline hidden></video>
         <button class="icon viewer-nav next" type="button" id="viewerNext" aria-label="Ảnh sau">›</button>
         <div class="viewer-info">
           <div id="viewerText"></div>

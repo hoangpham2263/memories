@@ -41,7 +41,10 @@
     uiTimer = setTimeout(() => store.set("mem-ui", JSON.stringify(ui)), 150);
   };
 
-  let photos = [];
+  let photos = []; // map photos (what the map, trips, stats and timeline show)
+  let kids = []; // album "Em Thóc": kept off the map, shown in its own section
+  const KIDS = "Em Thóc";
+  const setPhotos = (list) => { kids = list.filter((p) => p.album === KIDS); photos = list.filter((p) => !p.album); };
   let year = ""; // year filter, "" = all
   // Photos of the chosen year (all when no filter): what the map, trips, stats and timeline show
   const shown = () => (year ? photos.filter((p) => (p.takenAt || "").startsWith(year)) : photos);
@@ -113,6 +116,17 @@
       blobCache.set(url, fetch(url, { headers: { "x-admin-key": adminKey || "" } }).then((r) => (r.ok ? r.blob() : null)).then((b) => (b ? URL.createObjectURL(b) : "")));
     }
     blobCache.get(url).then((src) => { if (src) img.src = src; });
+  }
+
+  // Videos: the poster is the thumbnail, the file is fetched like a photo (as a blob when private)
+  function setVideo(video, p) {
+    const url = `${API}/api/img/${p.id}`;
+    video.poster = "";
+    if (!p.private) { video.src = url; return; }
+    if (!blobCache.has(url)) {
+      blobCache.set(url, fetch(url, { headers: { "x-admin-key": adminKey || "" } }).then((r) => (r.ok ? r.blob() : null)).then((b) => (b ? URL.createObjectURL(b) : "")));
+    }
+    blobCache.get(url).then((src) => { if (src && current() === p) video.src = src; });
   }
 
   // ---------- geometry ----------
@@ -344,7 +358,8 @@
     const img = lazyImg(first, { alt: p.title || "" });
     setImg(img, p, "thumb");
     const b = el("button", { type: "button", className: "thumb", title: p.title || p.place || p.province || "" }, img,
-      p.private ? el("span", { className: "lock", textContent: "🔒" }) : null);
+      p.private ? el("span", { className: "lock", textContent: "🔒" }) : null,
+      p.video ? el("span", { className: "play", textContent: "▶" }) : null);
     b.dataset.id = p.id;
     b.classList.toggle("sel", picked.has(p.id));
     b.onclick = () => {
@@ -899,12 +914,33 @@
     }
   }
 
+  // Album "Em Thóc": its own section, newest month first, with a photo count; hidden when empty
+  const monthName = (m) => (m === "?" ? "Chưa rõ ngày" : `Tháng ${+m.slice(5)}/${m.slice(0, 4)}`);
+  function renderKids() {
+    const card = $("kidsCard");
+    card.hidden = !kids.length;
+    if (!kids.length) return;
+    $("kidsCount").textContent = `${kids.length} ảnh`;
+    const order = [...kids].sort((a, b) => (b.takenAt || "").localeCompare(a.takenAt || ""));
+    const months = new Map();
+    for (const p of order) {
+      const m = (p.takenAt || "").slice(0, 7) || "?";
+      months.set(m, [...(months.get(m) || []), p]);
+    }
+    const keys = [...months.keys()].sort((a, b) => (a === "?") - (b === "?") || b.localeCompare(a));
+    $("kidsBody").replaceChildren(...keys.flatMap((m) => [
+      el("h3", { className: "kids-month", textContent: `${monthName(m)} · ${months.get(m).length}` }),
+      grid(months.get(m)),
+    ]));
+  }
+
   function renderAll() {
     saveUI({ selected: provinces.concat(ABROAD, OTHER).includes(selected) ? selected : null, year });
     renderStats();
     renderSide();
     renderTrips();
     renderTimeline();
+    renderKids();
     refreshMap();
   }
 
@@ -921,11 +957,19 @@
     const p = current();
     if (!p) return;
     // Small thumbnail at once (usually cached), swapped for the full photo when it has loaded
-    const img = $("viewerImg");
-    setImg(img, p, "thumb");
-    const full = new Image();
-    full.onload = () => { if (current() === p) img.src = full.src; };
-    setImg(full, p);
+    const img = $("viewerImg"), vid = $("viewerVid");
+    vid.pause();
+    vid.removeAttribute("src");
+    vid.hidden = !p.video;
+    img.hidden = !!p.video;
+    if (p.video) {
+      setVideo(vid, p);
+    } else {
+      setImg(img, p, "thumb");
+      const full = new Image();
+      full.onload = () => { if (current() === p) img.src = full.src; };
+      setImg(full, p);
+    }
     $("viewerImg").alt = p.title || "";
     const where = [p.place, p.province].filter(Boolean).join(", ");
     $("viewerText").replaceChildren(...[
@@ -976,7 +1020,7 @@
 
   const applyUpdate = (updated) => {
     for (const u of [].concat(updated)) {
-      const p = photos.find((x) => x.id === u.id);
+      const p = photos.find((x) => x.id === u.id) || kids.find((x) => x.id === u.id);
       if (p) Object.assign(p, u);
     }
   };
@@ -1006,6 +1050,7 @@
     try {
       await api(`/api/photos/${p.id}`, { method: "DELETE" });
       photos = photos.filter((x) => x.id !== p.id);
+      kids = kids.filter((x) => x.id !== p.id);
       $("viewer").close();
       renderAll();
       toast("✓ Đã xóa");
@@ -1055,7 +1100,7 @@
     const ids = [...picked];
     try {
       const res = await api("/api/photos/batch", jsonBody("POST", { action, ids, changes }));
-      if (action === "delete") photos = photos.filter((p) => !picked.has(p.id));
+      if (action === "delete") { photos = photos.filter((p) => !picked.has(p.id)); kids = kids.filter((p) => !picked.has(p.id)); }
       else applyUpdate(res);
       picked.clear();
       renderSelBar();
@@ -1139,7 +1184,7 @@
     const wasAdmin = admin;
     renderAdmin(s);
     // Owner also sees private photos
-    if (!wasAdmin && reload) { try { photos = await api("/api/photos"); renderAll(); } catch {} }
+    if (!wasAdmin && reload) { try { setPhotos(await api("/api/photos")); renderAll(); } catch {} }
     return s;
   }
 
@@ -1159,6 +1204,7 @@
     store.set("mem-admin", null);
     renderAdmin(null);
     photos = photos.filter((p) => !p.private);
+    kids = kids.filter((p) => !p.private);
     renderAll();
     toast("Đã thoát chế độ quản lý");
   };
@@ -1171,8 +1217,9 @@
     lastSync = Date.now();
     try {
       const next = await Promise.all([api("/api/photos"), api("/api/visited"), api("/api/meta"), api("/api/places"), loadPlans()]);
-      if (JSON.stringify(next) === JSON.stringify([photos, manual, meta, places, plans])) return;
-      [photos, manual, meta, places, plans] = next;
+      if (JSON.stringify(next) === JSON.stringify([[...photos, ...kids], manual, meta, places, plans])) return;
+      [, manual, meta, places, plans] = next;
+      setPhotos(next[0]);
       renderAll();
     } catch {}
   }
@@ -1592,7 +1639,9 @@
     provinceOptions($("moveProvince"), "", "Other");
     initMap();
     try {
-      [photos, manual, meta, places, plans] = await dataP;
+      const loaded = await dataP;
+      [, manual, meta, places, plans] = loaded;
+      setPhotos(loaded[0]);
     } catch (err) {
       toast(`Không tải được ảnh: ${err.message}`);
     }
