@@ -232,7 +232,7 @@ ${cover ? `<meta property="og:image" content="${url.origin}/api/img/${cover}"><m
   if (path === "/api/photos" && req.method === "GET") {
     const list = await readList(env);
     // Private photos are only listed for the owner
-    return json(isAdmin(req, env) ? list : list.filter((p) => !p.private), 200, { "cache-control": "no-store" });
+    return json(isAdmin(req, env) ? list : [], 200, { "cache-control": "no-store" });
   }
 
   // Trip names/notes/covers and province covers
@@ -265,18 +265,16 @@ ${cover ? `<meta property="og:image" content="${url.origin}/api/img/${cover}"><m
   // Image proxy: thumbnails and full-size, cached at the edge
   const img = path.match(/^\/api\/img\/([\w-]+)$/);
   if (img && req.method === "GET") {
-    const cache = caches.default;
-    const hit = await cache.match(req);
-    if (hit) return hit;
+    // Everything is for the owner only: no key, no photo (and nothing is cached at the edge)
+    if (!isAdmin(req, env)) return new Response("Không tìm thấy ảnh.", { status: 404 });
     const list = await readList(env);
     const item = list.find((p) => p.id === img[1]);
-    if (!item || (item.private && !isAdmin(req, env))) return new Response("Không tìm thấy ảnh.", { status: 404 });
+    if (!item) return new Response("Không tìm thấy ảnh.", { status: 404 });
     const size = url.searchParams.get("size") === "thumb" ? item.thumbId || item.fileId : item.fileId;
     const r = await drive(env, `/drive/v3/files/${size}?alt=media`);
     const res = new Response(r.body, {
-      headers: { "content-type": r.headers.get("content-type") || "image/jpeg", "cache-control": item.private ? "private, no-store" : "public, max-age=31536000, immutable" },
+      headers: { "content-type": r.headers.get("content-type") || "image/jpeg", "cache-control": "private, no-store" },
     });
-    if (!item.private) ctx.waitUntil(cache.put(req, res.clone()));
     return res;
   }
 
@@ -437,6 +435,7 @@ ${cover ? `<meta property="og:image" content="${url.origin}/api/img/${cover}"><m
       exif: cleanExif(x.exif),
       createdAt: now,
       ...cleanMeta(x),
+      private: true,
     }));
     const list = await readList(env);
     list.push(...added);

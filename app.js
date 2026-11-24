@@ -111,7 +111,6 @@
   const blobCache = new Map();
   function setImg(img, p, size) {
     const url = `${API}/api/img/${p.id}${size ? `?size=${size}` : ""}`;
-    if (!p.private) { img.src = url; return; }
     if (!blobCache.has(url)) {
       blobCache.set(url, fetch(url, { headers: { "x-admin-key": adminKey || "" } }).then((r) => (r.ok ? r.blob() : null)).then((b) => (b ? URL.createObjectURL(b) : "")));
     }
@@ -122,7 +121,6 @@
   function setVideo(video, p) {
     const url = `${API}/api/img/${p.id}`;
     video.poster = "";
-    if (!p.private) { video.src = url; return; }
     if (!blobCache.has(url)) {
       blobCache.set(url, fetch(url, { headers: { "x-admin-key": adminKey || "" } }).then((r) => (r.ok ? r.blob() : null)).then((b) => (b ? URL.createObjectURL(b) : "")));
     }
@@ -358,7 +356,6 @@
     const img = lazyImg(first, { alt: p.title || "" });
     setImg(img, p, "thumb");
     const b = el("button", { type: "button", className: "thumb", title: p.title || p.place || p.province || "" }, img,
-      p.private ? el("span", { className: "lock", textContent: "🔒" }) : null,
       p.video ? el("span", { className: "play", textContent: "▶" }) : null);
     b.dataset.id = p.id;
     b.classList.toggle("sel", picked.has(p.id));
@@ -974,7 +971,7 @@
     const where = [p.place, p.province].filter(Boolean).join(", ");
     $("viewerText").replaceChildren(...[
       p.title ? el("p", {}, el("strong", { textContent: p.title })) : null,
-      el("p", { className: "muted small", textContent: [where, fmtDate(photoDate(p)), p.camera, p.private ? "🔒 Chỉ mình xem" : ""].filter(Boolean).join(" · ") }),
+      el("p", { className: "muted small", textContent: [where, fmtDate(photoDate(p)), p.camera].filter(Boolean).join(" · ") }),
       p.note ? el("p", { textContent: p.note }) : null,
       photoInfo(p),
     ].filter(Boolean));
@@ -986,7 +983,6 @@
       $("pinPlace").hidden = p.lat == null;
       $("coverProvince").hidden = !p.province;
       $("coverTrip").hidden = !computeTrips().some((t) => t.photos.includes(p));
-      $("togglePrivate").textContent = p.private ? "Công khai ảnh này" : "Chỉ mình xem";
     }
   }
   // Original info read from the file at upload time
@@ -1068,21 +1064,12 @@
     try { await saveMeta({ ...meta, trips: { ...meta.trips, [t.key]: { ...(meta.trips[t.key] || {}), cover: p.id } } }); toast("✓ Đã đặt ảnh bìa chuyến đi"); }
     catch (err) { toast(err.message); }
   };
-  $("togglePrivate").onclick = async () => {
-    const p = current();
-    try {
-      applyUpdate(await api(`/api/photos/${p.id}`, jsonBody("PATCH", { private: !p.private })));
-      renderAll();
-      showViewer();
-      toast(p.private ? "🔒 Ảnh chỉ mình bạn xem được" : "✓ Ảnh đã công khai");
-    } catch (err) { toast(err.message); }
-  };
 
   // ---------- multi-select ----------
   function renderSelBar() {
     $("selBar").hidden = !selecting;
     $("selCount").textContent = `Đã chọn ${picked.size} ảnh`;
-    for (const id of ["selMove", "selPrivate", "selPublic", "selDownload", "selDelete"]) $(id).disabled = !picked.size;
+    for (const id of ["selMove", "selDownload", "selDelete"]) $(id).disabled = !picked.size;
     $("selDownload").textContent = picked.size > 1 ? `Tải ${picked.size} ảnh` : "Tải về";
     const scope = albumPhotos();
     const all = scope.length && scope.every((p) => picked.has(p.id));
@@ -1122,8 +1109,6 @@
     if (!province && !confirm("Chưa chọn tỉnh: các ảnh sẽ chuyển vào Other. Tiếp tục?")) return;
     batch("update", { province });
   };
-  $("selPrivate").onclick = () => batch("update", { private: true });
-  $("selPublic").onclick = () => batch("update", { private: false });
   $("selDelete").onclick = () => confirm(`Xóa ${picked.size} ảnh khỏi bản đồ và Google Drive?`) && batch("delete");
 
   // ---------- admin ----------
