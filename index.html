@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://memories-api.hoangpham2263.workers.dev" crossorigin />
     <link rel="preload" href="vn-34.json" as="fetch" crossorigin />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-    <link rel="stylesheet" href="style.css?v=91" />
+    <link rel="stylesheet" href="style.css?v=92" />
   </head>
   <body>
     <main class="wrap">
@@ -27,6 +27,10 @@
         </button>
       </header>
       <div class="content">
+
+      <section class="card kids-card" id="kidsCard" hidden>
+        <button id="kidsOpen" class="kids-open" type="button" aria-label="Mở album Em Thóc"></button>
+      </section>
 
       <section class="card map-card">
         <div class="map-head">
@@ -73,10 +77,6 @@
           <span id="photoCount" class="muted small"></span>
         </div>
         <div id="timeline" class="timeline"></div>
-      </section>
-
-      <section class="card kids-card" id="kidsCard" hidden>
-        <button id="kidsOpen" class="kids-open" type="button" aria-label="Mở album Em Thóc"></button>
       </section>
 
       <footer class="muted small">Làm bởi <a href="https://hoangpham.is-a.dev" target="_blank" rel="noopener">Phạm Quốc Hoàng</a> · MIT</footer>
