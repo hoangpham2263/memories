@@ -307,29 +307,6 @@ ${cover ? `<meta property="og:image" content="${url.origin}/api/img/${cover}"><m
     }
     return json({ moved });
   }
-  // cleanup: delete every extra root folder and every folder with no files inside (keeps the active root)
-  if (path === "/api/cleanup" && req.method === "POST") {
-    const g = async (query, fields) => (await (await drive(env, `/drive/v3/files?pageSize=1000&fields=files(${fields})&q=${encodeURIComponent(query)}`)).json()).files || [];
-    const folders = await g("mimeType='application/vnd.google-apps.folder' and trashed=false", "id,name,parents");
-    const files = await g("mimeType!='application/vnd.google-apps.folder' and trashed=false", "id,parents");
-    const active = await folderId(env);
-    const list = await readList(env);
-    const ref = new Set(list.flatMap((p) => [p.fileId, p.thumbId].filter(Boolean)));
-    const parentOf = new Map(folders.map((f) => [f.id, (f.parents || [])[0]]));
-    const rootOf = (id) => { let c = id, n = 0; while (parentOf.has(c) && parentOf.get(c) && parentOf.has(parentOf.get(c)) && n++ < 20) c = parentOf.get(c); return c; };
-    const rootsAll = folders.filter((f) => f.name === FOLDER_NAME && !parentOf.has((f.parents || [])[0]));
-    const extra = rootsAll.filter((f) => f.id !== active);
-    const blocked = extra.filter((r) => files.some((f) => ref.has(f.id) && rootOf((f.parents || [])[0]) === r.id)).map((r) => r.id);
-    const del = extra.filter((r) => !blocked.includes(r.id)).map((r) => r.id);
-    // empty folders inside the active tree
-    const used = new Set();
-    for (const f of files) { let c = (f.parents || [])[0]; while (c && !used.has(c)) { used.add(c); c = parentOf.get(c); } }
-    const empty = folders.filter((f) => f.id !== active && !used.has(f.id) && !del.includes(rootOf(f.id)) && rootOf(f.id) === active).map((f) => f.id);
-    const kill = [...del, ...empty];
-    await Promise.all(kill.slice(0, 40).map((id) => drive(env, `/drive/v3/files/${id}`, { method: "DELETE" }).catch(() => {})));
-    return json({ extraRoots: extra.length, blocked, deleted: Math.min(kill.length, 40), remaining: Math.max(0, kill.length - 40) });
-  }
-
   if (path === "/api/visited" && req.method === "PUT") {
     const { provinces = [] } = await req.json();
     const clean = [...new Set(provinces.map((x) => String(x).slice(0, 60)).filter(Boolean))].slice(0, 100);
