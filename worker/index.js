@@ -137,6 +137,12 @@ async function uploadFile(env, name, mime, bytes, parent) {
 }
 
 // ---------- Photo list ----------
+// Image requests come in bursts: keep the list in memory for a short while instead of reading KV for each one
+let memo = { at: 0, list: [] };
+async function imgList(env, fresh) {
+  if (fresh || Date.now() - memo.at > 30_000) memo = { at: Date.now(), list: await readList(env) };
+  return memo.list;
+}
 const readList = async (env) => (await env.MEM.get(LIST_KEY, "json")) || [];
 async function writeList(env, list, ctx) {
   await env.MEM.put(LIST_KEY, JSON.stringify(list));
@@ -280,13 +286,21 @@ ${cover ? `<meta property="og:image" content="${url.origin}/api/img/${cover}"><m
   if (img && req.method === "GET") {
     // Everything is for the owner only: no key, no photo (and nothing is cached at the edge)
     if (!isAdmin(req, env)) return new Response("Không tìm thấy ảnh.", { status: 404 });
-    const list = await readList(env);
-    const item = list.find((p) => p.id === img[1]);
+    let item = (await imgList(env)).find((p) => p.id === img[1]);
+    if (!item) item = (await imgList(env, true)).find((p) => p.id === img[1]); // just added
     if (!item) return new Response("Không tìm thấy ảnh.", { status: 404 });
     const size = url.searchParams.get("size") === "thumb" ? item.thumbId || item.fileId : item.fileId;
-    const r = await drive(env, `/drive/v3/files/${size}?alt=media`);
+    // Drive answers 403/429/5xx when asked too fast: short pause, then again
+    let r;
+    for (let i = 0; ; i++) {
+      try { r = await drive(env, `/drive/v3/files/${size}?alt=media`); break; }
+      catch (e) {
+        if (i >= 2 || !/Drive (403|429|5\d\d)/.test(e.message)) throw e;
+        await new Promise((ok) => setTimeout(ok, 400 * (i + 1)));
+      }
+    }
     const res = new Response(r.body, {
-      headers: { "content-type": r.headers.get("content-type") || "image/jpeg", "cache-control": "private, no-store" },
+      headers: { "content-type": r.headers.get("content-type") || "image/jpeg", "cache-control": "private, max-age=31536000, immutable" },
     });
     return res;
   }
@@ -392,6 +406,17 @@ ${cover ? `<meta property="og:image" content="${url.origin}/api/img/${cover}"><m
     }
     await writeList(env, list, ctx);
     return json(action === "delete" ? { deleted: items.length } : items);
+  }
+
+  // Different changes for many photos, saved in one write (files are moved afterwards by /api/consolidate)
+  if (path === "/api/photos/assign" && req.method === "POST") {
+    const { items = [] } = await req.json();
+    const by = new Map(items.slice(0, 3000).map((x) => [String(x.id), cleanMeta(x.changes || {})]));
+    const list = await readList(env);
+    const hit = list.filter((p) => by.has(p.id));
+    for (const p of hit) Object.assign(p, by.get(p.id));
+    await writeList(env, list, ctx);
+    return json(hit);
   }
 
   // Create the Tỉnh/Tháng folders once before parallel uploads, so they never race to create duplicates
@@ -504,6 +529,7 @@ export default {
     }
     const h = new Headers(res.headers);
     for (const [k, v] of Object.entries(cors(req))) h.set(k, v);
+    h.set("vary", "origin, x-admin-key");
     return new Response(res.body, { status: res.status, headers: h });
   },
 };

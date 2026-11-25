@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://memories-api.hoangpham2263.workers.dev" crossorigin />
     <link rel="preload" href="vn-34.json" as="fetch" crossorigin />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-    <link rel="stylesheet" href="style.css?v=92" />
+    <link rel="stylesheet" href="style.css?v=100" />
   </head>
   <body>
     <main class="wrap">
@@ -28,56 +28,25 @@
       </header>
       <div class="content">
 
-      <section class="card kids-card" id="kidsCard" hidden>
-        <button id="kidsOpen" class="kids-open" type="button" aria-label="Mở album Em Thóc"></button>
-      </section>
-
-      <section class="card map-card">
-        <div class="map-head">
-          <div>
-            <h2>Bản đồ hành trình</h2>
-            <p class="muted small" id="visitedText">Đang tải…</p>
-            <div id="years" class="years" hidden></div>
-          </div>
-          <div class="actions" id="adminActions" hidden>
-            <button id="sheetBtn" type="button" title="Mở Google Sheet lịch trình các chuyến đi">Lịch trình ↗</button>
-            <button id="selectBtn" type="button">Chọn nhiều</button>
-            <button id="addBtn" class="primary" type="button">+ Thêm</button>
-          </div>
+      <div class="bar">
+        <nav id="tabs" class="tabs" aria-label="Cách xem"></nav>
+        <div class="actions" id="adminActions" hidden>
+          <button id="sheetBtn" type="button" title="Mở Google Sheet lịch trình các chuyến đi">Lịch trình ↗</button>
+          <button id="selectBtn" type="button">Chọn nhiều</button>
+          <button id="addBtn" class="primary" type="button">+ Thêm</button>
         </div>
-        <div class="progress"><span id="visitedBar"></span></div>
-        <div class="map-layout">
-          <div id="map" class="map" aria-label="Bản đồ Việt Nam 34 tỉnh, thành phố"></div>
-          <aside class="side">
-            <div class="side-head">
-              <strong id="sideTitle">Nơi đã đến</strong>
-              <button id="sideBack" class="link" type="button" hidden>← Tất cả</button>
-            </div>
-            <div id="sideBody" class="side-body"></div>
-          </aside>
-        </div>
-      </section>
+      </div>
+      <div class="sub-bar">
+        <p class="muted small" id="visitedText"></p>
+        <div id="years" class="years" hidden></div>
+      </div>
+      <p id="loading" class="empty">Đang tải…</p>
 
-      <section class="card" id="statsCard">
-        <h2>Thống kê</h2>
-        <div id="stats" class="stats"></div>
+      <section id="home" class="map-layout">
+        <div id="map" class="map" aria-label="Bản đồ Việt Nam 34 tỉnh, thành phố"></div>
+        <div id="sideBody" class="places"></div>
       </section>
-
-      <section class="card">
-        <div class="sec-head">
-          <h2>Chuyến đi</h2>
-          <span id="tripCount" class="muted small"></span>
-        </div>
-        <div id="trips" class="trips"></div>
-      </section>
-
-      <section class="card">
-        <div class="sec-head">
-          <h2>Dòng thời gian</h2>
-          <span id="photoCount" class="muted small"></span>
-        </div>
-        <div id="timeline" class="timeline"></div>
-      </section>
+      <section id="view" class="view" hidden></section>
 
       <footer class="muted small">Làm bởi <a href="https://hoangpham.is-a.dev" target="_blank" rel="noopener">Phạm Quốc Hoàng</a> · MIT</footer>
       </div>
@@ -88,6 +57,7 @@
       <strong id="selCount"></strong>
       <select id="selProvince"></select>
       <button id="selMove" type="button">Chuyển tỉnh</button>
+      <input id="selDate" type="date" aria-label="Đặt ngày chụp" title="Đặt ngày chụp" />
       <button id="selAll" type="button">Chọn tất cả</button>
       <button id="selDownload" type="button">Tải về</button>
       <button id="selDelete" type="button">Xóa</button>
@@ -213,35 +183,35 @@
       </form>
     </dialog>
 
-    <!-- Album Em Thóc -->
-    <dialog id="kidsDlg" class="album">
-      <div class="album-head">
-        <button class="icon" type="button" id="kidsClose" aria-label="Đóng">←</button>
-        <strong id="kidsTitle"></strong>
-      </div>
-      <div id="kidsBody" class="album-body"></div>
-    </dialog>
-
     <!-- Lightbox -->
     <dialog id="viewer" class="viewer">
-      <div class="viewer-box">
-        <button class="icon viewer-close" type="button" id="viewerClose" aria-label="Đóng">✕</button>
-        <button class="icon viewer-download" type="button" id="viewerDownload" title="Tải ảnh về" aria-label="Tải ảnh về">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M4 20h16"/></svg>
+      <div class="viewer-top">
+        <span id="viewerCount" class="viewer-count"></span>
+        <button class="icon" type="button" id="viewerLive" hidden>LIVE</button>
+        <button class="icon" type="button" id="viewerInfo" title="Thông tin và chỉnh sửa" aria-label="Thông tin và chỉnh sửa">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
         </button>
+        <button class="icon" type="button" id="viewerDownload" title="Tải về" aria-label="Tải về">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M4 20h16"/></svg>
+        </button>
+        <button class="icon" type="button" id="viewerClose" aria-label="Đóng">✕</button>
+      </div>
+      <div class="viewer-stage">
         <button class="icon viewer-nav prev" type="button" id="viewerPrev" aria-label="Ảnh trước">‹</button>
         <img id="viewerImg" alt="" />
         <video id="viewerVid" controls playsinline hidden></video>
         <button class="icon viewer-nav next" type="button" id="viewerNext" aria-label="Ảnh sau">›</button>
-        <div class="viewer-info">
-          <div id="viewerText"></div>
-          <div id="viewerTools" class="actions viewer-tools" hidden>
-            <select id="moveProvince" aria-label="Đổi địa điểm"></select>
-            <button id="coverProvince" type="button">Làm ảnh bìa tỉnh</button>
-            <button id="coverTrip" type="button">Làm ảnh bìa chuyến</button>
-            <button id="pinPlace" type="button">Ghim nơi chụp</button>
-            <button id="deleteBtn" type="button">Xóa ảnh</button>
-          </div>
+      </div>
+      <div id="viewerCap" class="viewer-cap"></div>
+      <div class="viewer-info">
+        <div id="viewerText"></div>
+        <div id="viewerTools" class="viewer-tools" hidden>
+          <label>Tỉnh<select id="moveProvince"></select></label>
+          <label>Ngày chụp<input id="setDate" type="date" /></label>
+          <button id="coverProvince" type="button">Làm ảnh bìa tỉnh</button>
+          <button id="coverTrip" type="button">Làm ảnh bìa chuyến</button>
+          <button id="pinPlace" type="button">Ghim nơi chụp</button>
+          <button id="deleteBtn" type="button" class="danger">Xóa</button>
         </div>
       </div>
     </dialog>
@@ -254,6 +224,6 @@
     <script src="vendor/exifr.full.umd.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script>
-    <script src="app.js?v=93"></script>
+    <script src="app.js?v=100"></script>
   </body>
 </html>

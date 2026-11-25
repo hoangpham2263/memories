@@ -41,13 +41,39 @@
     uiTimer = setTimeout(() => store.set("mem-ui", JSON.stringify(ui)), 150);
   };
 
-  let photos = []; // map photos (what the map, trips, stats and timeline show)
+  let photos = []; // everything except albums
+  let main = []; // photos without Live Photo clips: what every view shows
   let kids = []; // album "Em Thóc": kept off the map, shown in its own section
+  let liveOf = new Map(); // photo id → its Live Photo clip
+  let orphans = []; // Live Photo clips whose photo is gone
   const KIDS = "Em Thóc";
-  const setPhotos = (list) => { kids = list.filter((p) => p.album === KIDS); photos = list.filter((p) => !p.album); };
+  const stem = (n) => n.replace(/^dev-/, "").replace(/\.\w+$/, "").toUpperCase();
+  const seconds = (p) => Number((p.exif?.size || "").match(/ (\d+)s$/)?.[1] ?? 99);
+  let raw = []; // the list as last loaded, to notice changes made elsewhere
+  const setPhotos = (list) => {
+    raw = list;
+    kids = list.filter((p) => p.album === KIDS);
+    photos = list.filter((p) => !p.album);
+    areaCache.clear();
+    // iPhone Live Photos came in as a photo plus a 1–3 s clip with the same name and day
+    const stills = new Map(photos.filter((p) => !p.video && p.name.startsWith("dev-")).map((p) => [stem(p.name), p]));
+    liveOf = new Map();
+    orphans = [];
+    const hide = new Set();
+    for (const p of photos) {
+      if (!p.video || !(p.hash || "").startsWith("vid-dev-") || seconds(p) > 3) continue;
+      const still = stills.get(stem(p.name));
+      hide.add(p.id);
+      still && still.takenAt === p.takenAt ? liveOf.set(still.id, p) : orphans.push(p);
+    }
+    main = photos.filter((p) => !hide.has(p.id));
+  };
+  // A photo together with its Live clip, for delete / move
+  const withClip = (ids) => ids.flatMap((id) => (liveOf.has(id) ? [id, liveOf.get(id).id] : [id]));
+  const areaCache = new Map();
   let year = ""; // year filter, "" = all
   // Photos of the chosen year (all when no filter): what the map, trips, stats and timeline show
-  const shown = () => (year ? photos.filter((p) => (p.takenAt || "").startsWith(year)) : photos);
+  const shown = () => (year ? main.filter((p) => (p.takenAt || "").startsWith(year)) : main);
   let manual = []; // provinces ticked as visited without photos
   let places = []; // specific places visited: { name, province, lat, lng }
   let plans = []; // places to go next, same shape
@@ -71,6 +97,17 @@
     el.classList.add("show");
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => el.classList.remove("show"), ms);
+  }
+  let toastBox;
+  function toastAction(text, label, fn) {
+    toastBox?.remove();
+    const b = Object.assign(document.createElement("button"), { type: "button", textContent: label });
+    toastBox = Object.assign(document.createElement("div"), { className: "toast act show" });
+    toastBox.append(text, b);
+    document.body.append(toastBox);
+    const box = toastBox;
+    b.onclick = () => { box.remove(); fn(); };
+    setTimeout(() => box.remove(), 9000);
   }
   const el = (tag, props = {}, ...children) => {
     const node = Object.assign(document.createElement(tag), props);
@@ -107,24 +144,57 @@
   }
   const jsonBody = (method, body) => ({ method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
-  // Public photos load straight from the Worker; private ones need the admin key, so they are fetched as blobs
+  // Files need the password, so they are fetched as blobs: at most 8 at once, retried when the server is busy
   const blobCache = new Map();
+  const queue = [];
+  let running = 0;
+  function pump() {
+    while (running < 8 && queue.length) {
+      const job = queue.shift();
+      running++;
+      job().finally(() => { running--; pump(); });
+    }
+  }
+  function blobUrl(url, first) {
+    if (!blobCache.has(url)) {
+      blobCache.set(url, new Promise((done) => {
+        const job = async () => {
+          for (let i = 0; i < 4; i++) {
+            try {
+              const r = await fetch(url, { headers: { "x-admin-key": adminKey || "" } });
+              if (r.ok) return done(URL.createObjectURL(await r.blob()));
+              if (r.status === 404 || r.status === 401) break;
+            } catch {}
+            await new Promise((ok) => setTimeout(ok, 500 * 2 ** i));
+          }
+          blobCache.delete(url);
+          done("");
+        };
+        first ? queue.unshift(job) : queue.push(job);
+        pump();
+      }));
+    }
+    return blobCache.get(url);
+  }
+  // Thumbnails load only when they come near the screen
+  const seen = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      seen.unobserve(e.target);
+      const img = e.target;
+      blobUrl(img._url).then((src) => { if (src) img.src = src; });
+    }
+  }, { rootMargin: "500px 0px" });
   function setImg(img, p, size) {
     const url = `${API}/api/img/${p.id}${size ? `?size=${size}` : ""}`;
-    if (!blobCache.has(url)) {
-      blobCache.set(url, fetch(url, { headers: { "x-admin-key": adminKey || "" } }).then((r) => (r.ok ? r.blob() : null)).then((b) => (b ? URL.createObjectURL(b) : "")));
-    }
-    blobCache.get(url).then((src) => { if (src) img.src = src; });
+    if (size === "thumb" && img.id !== "viewerImg") { img._url = url; return seen.observe(img); }
+    blobUrl(url, true).then((src) => { if (src && (img.id !== "viewerImg" || current() === p)) img.src = src; });
   }
-
   // Videos: the poster is the thumbnail, the file is fetched like a photo (as a blob when private)
   function setVideo(video, p) {
     const url = `${API}/api/img/${p.id}`;
     video.poster = "";
-    if (!blobCache.has(url)) {
-      blobCache.set(url, fetch(url, { headers: { "x-admin-key": adminKey || "" } }).then((r) => (r.ok ? r.blob() : null)).then((b) => (b ? URL.createObjectURL(b) : "")));
-    }
-    blobCache.get(url).then((src) => { if (src && current() === p) video.src = src; });
+    blobUrl(url, true).then((src) => { if (src && current() === p) video.src = src; });
   }
 
   // ---------- geometry ----------
@@ -157,32 +227,66 @@
   }
   const labelOf = (name) => geo.features.find((f) => f.properties.name === name)?.properties.label; // [lng, lat]
 
-  // ---------- trips ----------
-  // Consecutive photos in the same province, at most TRIP_GAP_DAYS apart, form one trip
-  function computeTrips() {
-    const dated = shown().filter((p) => p.takenAt && p.province).sort((a, b) => a.takenAt.localeCompare(b.takenAt));
-    const trips = [];
-    let cur = null;
-    for (const p of dated) {
-      const gap = cur ? (new Date(p.takenAt) - new Date(cur.end)) / 86400000 : Infinity;
-      if (cur && cur.province === p.province && gap <= TRIP_GAP_DAYS) {
-        cur.photos.push(p);
-        cur.end = p.takenAt;
-      } else {
-        cur = { province: p.province, start: p.takenAt, end: p.takenAt, photos: [p] };
-        trips.push(cur);
+  // ---------- areas ----------
+  // Where inside the province: the pinned place nearby (your own names), else the ward from GPS
+  const km = (a, b) => {
+    const r = Math.PI / 180, x = (b.lng - a.lng) * r * Math.cos(((a.lat + b.lat) / 2) * r), y = (b.lat - a.lat) * r;
+    return Math.hypot(x, y) * 6371;
+  };
+  const ACCENTS = { "hoa-khanh": "Hòa Khánh", "hoi-an": "Hội An", "hai-chau": "Hải Châu", "hoa-cuong": "Hòa Cường", "thanh-khe": "Thanh Khê", "tay-ho": "Tây Hồ" };
+  const cleanArea = (n) => { const t = String(n || "").replace(/,.*$/, "").replace(/\s+-\s+.*$/, "").trim(); return ACCENTS[slug(t)] || t; };
+  function areaOf(p) {
+    if (areaCache.has(p.id)) return areaCache.get(p.id);
+    let name = "";
+    if (p.lat != null) {
+      let min = Infinity;
+      for (const x of places) {
+        if (x.lat == null) continue;
+        const d = km(p, x), reach = /vườn quốc gia/i.test(x.name) ? 25 : 8;
+        if (d <= reach && d < min) { min = d; name = titleCase(x.group || x.name); }
       }
     }
-    for (const t of trips) {
-      t.key = `${slug(t.province)}-${t.start}`;
-      const m = meta.trips[t.key] || {};
-      t.places = [...new Set(t.photos.map((p) => p.place).filter(Boolean))];
-      t.name = m.name || t.province;
-      t.note = m.note || "";
-      t.cover = t.photos.find((p) => p.id === m.cover) || t.photos[0];
+    name ||= cleanArea(p.place) || "Chưa rõ khu vực";
+    areaCache.set(p.id, name);
+    return name;
+  }
+
+  // ---------- trips ----------
+  // Home = wherever many different days were spent (≈25 km squares with 8+ days). A trip = days spent 20+ km from every home.
+  // Photos without GPS taken on those days belong to the trip too.
+  function computeTrips() {
+    const gps = main.filter((p) => p.lat != null && p.takenAt);
+    const cells = new Map();
+    for (const p of gps) {
+      const k = `${Math.round(p.lat * 4)},${Math.round(p.lng * 4)}`;
+      const c = cells.get(k) || cells.set(k, { days: new Set(), lat: 0, lng: 0, n: 0 }).get(k);
+      c.days.add(p.takenAt); c.lat += p.lat; c.lng += p.lng; c.n++;
     }
-    // Most recent trip first
-    return trips.sort((a, b) => b.end.localeCompare(a.end));
+    const homes = [...cells.values()].filter((c) => c.days.size >= 8).map((c) => ({ lat: c.lat / c.n, lng: c.lng / c.n }));
+    const away = (p) => homes.every((h) => km(p, h) > 20);
+    const days = [...groupBy(gps, (p) => p.takenAt).entries()].filter(([, l]) => l.filter(away).length * 2 >= l.length).map(([d]) => d).sort();
+    const runs = [];
+    for (const d of days) {
+      const cur = runs.at(-1);
+      if (cur && (new Date(d) - new Date(cur.end)) / 86400000 <= TRIP_GAP_DAYS) cur.end = d;
+      else runs.push({ start: d, end: d });
+    }
+    const trips = [];
+    for (const t of runs) {
+      if (year && !t.start.startsWith(year)) continue;
+      t.photos = byDate(main.filter((p) => p.takenAt >= t.start && p.takenAt <= t.end)).reverse();
+      const far = t.photos.filter((p) => p.lat != null && away(p));
+      if (t.photos.length < 3 || !far.length) continue;
+      t.places = [...groupBy(far, areaOf).entries()].sort((x, y) => y[1].length - x[1].length).map(([n]) => n);
+      t.province = [...groupBy(far, (p) => p.province || "").entries()].sort((x, y) => y[1].length - x[1].length)[0][0];
+      t.key = `${slug(t.province || "chuyen")}-${t.start}`;
+      const m = meta.trips[t.key] || {};
+      t.name = m.name || t.places.slice(0, 2).join(", ");
+      t.note = m.note || "";
+      t.cover = t.photos.find((p) => p.id === m.cover) || far.find((p) => !p.video) || far[0];
+      trips.push(t);
+    }
+    return trips.sort((x, y) => y.end.localeCompare(x.end));
   }
   const tripRange = (t) => {
     const a = new Date(t.start), b = new Date(t.end);
@@ -192,7 +296,7 @@
   };
   const coverOf = (province) => {
     const list = byProvince().get(province) || [];
-    return list.find((p) => p.id === meta.covers[province]) || newestFirst(list)[0];
+    return list.find((p) => p.id === meta.covers[province]) || newestFirst(list).find((p) => !p.video) || list[0];
   };
   const saveMeta = async (next) => {
     meta = await api("/api/meta", jsonBody("PUT", next));
@@ -334,14 +438,6 @@
   // Selected province on top so its whole border shows
   const raiseSelected = () => layer.eachLayer((l) => l.feature.properties.name === selected && l.bringToFront());
 
-  function selectProvince(name) {
-    selected = name;
-    saveUI({ selected: name });
-    layer.setStyle(styleFor);
-    raiseSelected();
-    renderSide();
-  }
-
   // ---------- photo tiles ----------
   // Top of the page first: the first images load at once with high priority, the rest lazily as they scroll in.
   // Each image fades in when ready, over a soft placeholder.
@@ -353,10 +449,11 @@
   }
 
   function thumbButton(p, list, first = false) {
-    const img = lazyImg(first, { alt: p.title || "" });
+    const img = el("img", { alt: p.title || "", decoding: "async" });
+    img.addEventListener("load", () => img.classList.add("ready"), { once: true });
     setImg(img, p, "thumb");
     const b = el("button", { type: "button", className: "thumb", title: p.title || p.place || p.province || "" }, img,
-      p.video ? el("span", { className: "play", textContent: "▶" }) : null);
+      p.video ? el("span", { className: "play", textContent: "▶" }) : liveOf.has(p.id) ? el("span", { className: "play", textContent: "LIVE" }) : null);
     b.dataset.id = p.id;
     b.classList.toggle("sel", picked.has(p.id));
     b.onclick = () => {
@@ -372,7 +469,7 @@
   // ---------- side panel ----------
   // Specific places in one province; the owner adds them here, one province at a time
   async function savePlaces(next, msg) {
-    try { places = await api("/api/places", jsonBody("PUT", { places: next })); renderAll(); toast(msg); }
+    try { places = await api("/api/places", jsonBody("PUT", { places: next })); areaCache.clear(); renderAll(); toast(msg); }
     catch (err) { toast(err.message); }
   }
   // Free OpenStreetMap search (Photon) inside Vietnam, each result with its province
@@ -685,138 +782,187 @@
   }
 
 
-  function renderSide() {
+  // ---------- routes ----------
+  // #/  ·  #/noi/<tỉnh>[/<khu vực>]  ·  #/thoi-gian  ·  #/album[/<album or trip>]  ·  #/can-xep[/<group>]
+  const go = (path) => { location.hash = path; };
+  const route = () => {
+    const h = decodeURIComponent(location.hash);
+    if (h.startsWith("#trip=")) return ["album", h.slice(6)]; // old trip links
+    return h.replace(/^#\/?/, "").split("/").filter(Boolean);
+  };
+  const TABS = [["", "Địa điểm"], ["thoi-gian", "Thời gian"], ["album", "Album"], ["can-xep", "Cần xếp"]];
+
+  // ---------- shared pieces ----------
+  const countText = (list) => {
+    const v = list.filter((p) => p.video).length, n = list.length - v;
+    return [n ? `${n} ảnh` : "", v ? `${v} video` : ""].filter(Boolean).join(" · ") || "0 ảnh";
+  };
+  const DAYS = ["Chủ nhật", "Thứ hai", "Thứ ba", "Thứ tư", "Thứ năm", "Thứ sáu", "Thứ bảy"];
+  const dayText = (d) => (d ? `${DAYS[new Date(d).getDay()]}, ${fmtDate(d)}` : "Chưa rõ ngày");
+  const monthName = (m) => (m === "?" ? "Chưa rõ ngày" : `Tháng ${+m.slice(5)}, ${m.slice(0, 4)}`);
+  const groupBy = (list, key) => {
+    const m = new Map();
+    for (const p of list) { const k = key(p); m.has(k) ? m.get(k).push(p) : m.set(k, [p]); }
+    return m;
+  };
+  // Newest first; photos with no date last
+  const byDate = (list) => [...list].sort((a, b) => (b.takenAt || "").localeCompare(a.takenAt || "") || (a.exif?.time || "~").localeCompare(b.exif?.time || "~") || a.name.localeCompare(b.name));
+  const coverImg = (p, className) => {
+    const img = el("img", { className, alt: "", decoding: "async" });
+    img.addEventListener("load", () => img.classList.add("ready"), { once: true });
+    if (p) setImg(img, p, "thumb");
+    return img;
+  };
+  // One day: date, where, photos. `scope` = the list the viewer steps through
+  function daySection(day, list, scope, withProvince) {
+    // "Cát Lái, Sài Gòn (TP. Hồ Chí Minh)": areas first, the province once
+    const where = [...groupBy(list.filter((p) => p.province), (p) => p.province).entries()].map(([name, l]) => {
+      const areas = [...groupBy(l, areaOf).keys()].filter((n) => n !== "Chưa rõ khu vực" && n !== name);
+      const text = areas.slice(0, 3).join(", ") + (areas.length > 3 ? ` +${areas.length - 3}` : "");
+      return withProvince ? (text ? `${text} (${name})` : name) : text;
+    }).filter(Boolean);
+    return el("section", { className: "day" },
+      el("p", { className: "day-head" }, el("strong", { textContent: dayText(day) }),
+        el("span", { className: "muted small", textContent: [where.join(" · "), list.length].filter(Boolean).join("  ·  ") })),
+      el("div", { className: "grid" }, ...list.map((p) => thumbButton(p, scope))));
+  }
+  const dayFeed = (list, withProvince) => {
+    const scope = byDate(list);
+    return [...groupBy(scope, (p) => p.takenAt || "").entries()].map(([d, l]) => daySection(d, l, scope, withProvince));
+  };
+  const crumbs = (backTo, backText, title, sub, ...right) => el("div", { className: "view-head" },
+    Object.assign(el("button", { type: "button", className: "crumb", textContent: `‹ ${backText}` }), { onclick: () => go(backTo) }),
+    el("div", { className: "view-title" }, el("div", {}, el("h2", { textContent: title }), el("p", { className: "muted small", textContent: sub })), el("div", { className: "actions" }, ...right.filter(Boolean))));
+  const empty = (text) => el("p", { className: "empty", textContent: text });
+  // Photos are for the owner only
+  function gate() {
+    const b = el("button", { type: "button", className: "primary", textContent: "Nhập mật khẩu" });
+    b.onclick = () => $("adminBtn").click();
+    return el("div", { className: "empty gate" }, el("p", { textContent: "Ảnh chỉ xem được khi có mật khẩu." }), b);
+  }
+  let scopeList = []; // photos on screen: what "Chọn tất cả" picks
+  const albumPhotos = () => scopeList;
+
+  // ---------- Địa điểm ----------
+  function selectProvince(name) { go(`/noi/${slug(name)}`); }
+  function renderProvinces(box) {
     const groups = byProvince();
-    $("sideBack").hidden = !selected;
-    if (selected && provinces.concat(ABROAD).includes(selected)) {
-      const list = newestFirst(groups.get(selected) || []);
-      albumList = list;
-      const count = [list.length ? `${list.length} ảnh` : "", placesIn(selected).length ? `${placesIn(selected).length} địa điểm` : ""].filter(Boolean).join(" · ");
-      $("sideTitle").textContent = count ? `${selected} · ${count}` : selected;
-      const ticked = visitedSet().has(selected);
-      const spots = placesIn(selected);
-      $("sideBody").replaceChildren(...[
-        spots.length || admin ? placeBox(selected, spots) : null,
-        list.length ? albumGrid(list, selected) : ticked || spots.length ? null : el("p", { className: "empty", textContent: "Chưa có ảnh." }),
-      ].filter(Boolean));
-      return;
-    }
-    if (selected === OTHER) return showList(OTHER, newestFirst(shown().filter((p) => !p.province)));
-    selected = null;
-    $("sideTitle").textContent = "Nơi đã đến";
-    const rows = [...groups.entries()].filter(([n]) => n !== ABROAD).sort((a, b) => b[1].length - a[1].length);
-    for (const n of visitedSet()) if (!groups.has(n)) rows.push([n, []]);
-    if (groups.get(ABROAD)) rows.push([ABROAD, groups.get(ABROAD)]);
-    const other = shown().filter((p) => !p.province);
-    if (other.length) rows.push([OTHER, other]);
-    if (!rows.length) return $("sideBody").replaceChildren(el("p", { className: "empty", textContent: "Chưa có nơi nào." }));
-    const row = ([name, list]) => {
-      const cover = name === OTHER ? null : coverOf(name);
-      const icon = cover ? lazyImg(true, { className: "prov-cover", alt: "" }) : el("i", { style: `background:${name === OTHER || name === ABROAD ? cssVar("--muted") : colorOf(name)}` });
-      if (cover) setImg(icon, cover, "thumb");
-      const b = el("button", { type: "button", className: "prov" }, icon,
-        el("span", { textContent: name }),
-        el("small", { textContent: list.length ? `${list.length} ảnh` : placesIn(name).length ? `${placesIn(name).length} địa điểm` : "Đã đến" }));
-      b.onclick = () => (name === OTHER ? showList(OTHER, newestFirst(list)) : selectProvince(name));
+    const rows = [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
+    const noPhotos = [...visitedSet()].filter((n) => !groups.has(n));
+    const card = ([name, list]) => {
+      const areas = groupBy(list, areaOf).size;
+      const b = el("button", { type: "button", className: "prov" }, coverImg(coverOf(name), "prov-cover"),
+        el("span", { className: "prov-text" }, el("strong", { textContent: name }),
+          el("small", { textContent: `${countText(list)} · ${areas} nơi` })),
+        el("i", { className: "prov-dot", style: `background:${colorOf(name)}` }));
+      b.onclick = () => selectProvince(name);
       return b;
     };
-    // 10 places a page on phones
-    $("sideBody").replaceChildren(paged(rows, 10, "places", (part) => el("div", { className: "prov-list" }, ...part.map(row))));
+    const rest = noPhotos.map((n) => {
+      const b = el("button", { type: "button", className: "tag", textContent: n });
+      b.onclick = () => selectProvince(n);
+      return b;
+    });
+    const todo = shown().filter((p) => !p.province).length;
+    const more = todo ? el("button", { type: "button", className: "todo-row" }, el("span", { textContent: `${todo} mục chưa có địa điểm` }), el("span", { className: "link-text", textContent: "Xếp ngay ›" })) : null;
+    if (more) more.onclick = () => go("/can-xep");
+    box.replaceChildren(...[
+      rows.length ? el("div", { className: "prov-list" }, ...rows.map(card)) : admin ? empty("Chưa có ảnh nào.") : gate(),
+      rest.length ? el("div", { className: "tag-row" }, el("span", { className: "muted small", textContent: "Đã đến, chưa có ảnh" }), ...rest) : null,
+      more,
+    ].filter(Boolean));
   }
-
-  // Photos of the album open in the side panel (province / trip / Other); "Chọn tất cả" picks these
-  let albumList = null;
-  const albumPhotos = () => (selected && albumList ? albumList : shown());
-
-  // Keep page scroll working over the side list until the list itself has something to scroll
-  const sideBody = $("sideBody");
-  const markScroll = () => {
-    // Album open: places + search stick to the top while the photos scroll
-    sideBody.classList.toggle("album", !!sideBody.querySelector(":scope > .grid"));
-    sideBody.classList.toggle("scrolls", sideBody.scrollHeight > sideBody.clientHeight + 1);
-    if (selecting) renderSelBar(); // "Chọn cả …" follows the album on screen
-  };
-  new ResizeObserver(markScroll).observe(sideBody);
-  new MutationObserver(markScroll).observe(sideBody, { childList: true });
-
-  // Phones: the album shows 20 photos a page (4 × 5) with ‹ › instead of a scroll area (nested scrolling jumps on iOS)
-  const isPhone = () => matchMedia("(max-width: 640px)").matches;
-  const PAGE = 20; // 4 columns × 5 rows
-  // Phones: long lists split into numbered pages; render(slice) draws one page
-  const pageAt = {}; // current page per list key
-  function paged(items, per, key, render) {
-    if (!isPhone() || items.length <= per) return render(items, 0);
-    const pages = Math.ceil(items.length / per);
-    pageAt[key] = Math.min(pageAt[key] || 0, pages - 1);
-    const wrap = el("div", { className: "album-pages" });
-    const draw = () => {
-      const cur = pageAt[key];
-      const btn = (label, n, props = {}) => {
-        const b = el("button", { type: "button", textContent: label, ...props });
-        b.onclick = () => { pageAt[key] = n; saveUI({ pages: { ...pageAt } }); draw(); };
-        return b;
-      };
-      // Numbered pages: first, last and the ones next to the current page, "…" for the gaps
-      const nums = [];
-      for (let i = 0; i < pages; i++) {
-        if (i === 0 || i === pages - 1 || Math.abs(i - cur) <= 1) nums.push(i);
-        else if (nums.at(-1) !== "…") nums.push("…");
-      }
-      wrap.replaceChildren(render(items.slice(cur * per, cur * per + per), cur * per), el("div", { className: "pager" },
-        btn("‹", cur - 1, { disabled: cur === 0, ariaLabel: "Trang trước" }),
-        ...nums.map((n) => (n === "…" ? el("span", { textContent: "…" }) : btn(String(n + 1), n, { className: n === cur ? "on" : "" }))),
-        btn("›", cur + 1, { disabled: cur >= pages - 1, ariaLabel: "Trang sau" })));
+  let pinnedOpen = false;
+  function renderProvince(name, areaSlug) {
+    const all = byProvince().get(name) || [];
+    const areas = [...groupBy(all, areaOf).entries()].sort((a, b) => b[1].length - a[1].length);
+    const area = areas.find(([n]) => slug(n) === areaSlug)?.[0];
+    const list = area != null ? areas.find(([n]) => n === area)[1] : all;
+    scopeList = list;
+    const base = `/noi/${slug(name)}`;
+    const chip = (text, n, on, path) => {
+      const b = el("button", { type: "button", className: `tag${on ? " on" : ""}` }, text, el("small", { textContent: n }));
+      b.onclick = () => go(path);
+      return b;
     };
-    draw();
-    return wrap;
-  }
-  let albumKey = "";
-  function albumGrid(list, key) {
-    // A different album starts on page 1
-    if (albumKey !== key) { albumKey = key; pageAt.album = 0; }
-    return paged(list, PAGE, "album", (part, from) =>
-      el("div", { className: "grid" }, ...part.map((p, i) => thumbButton(p, list, from + i < 9))));
-  }
-
-  function showList(title, list, head) {
-    selected = title;
-    $("sideBack").hidden = false;
-    $("sideTitle").textContent = `${title} · ${list.length} ảnh`;
-    albumList = list;
-    $("sideBody").replaceChildren(...(head || []), albumGrid(list, title));
+    const spots = placesIn(name);
+    const pins = spots.length || admin ? el("details", { className: "pins", open: pinnedOpen }, el("summary", { textContent: `Địa điểm đã ghim · ${spots.length}` }), placeBox(name, spots)) : null;
+    if (pins) pins.ontoggle = () => (pinnedOpen = pins.open);
+    $("view").replaceChildren(...[
+      crumbs("/", "Địa điểm", name, [countText(all), `${areas.length} nơi`].join(" · ")),
+      areas.length > 1 ? el("div", { className: "tag-row scroll" }, chip("Tất cả", all.length, area == null, base),
+        ...areas.map(([n, l]) => chip(n, l.length, n === area, `${base}/${slug(n)}`))) : null,
+      pins,
+      ...(list.length ? dayFeed(list, false) : [admin ? empty("Chưa có ảnh ở đây.") : gate()]),
+    ].filter(Boolean));
   }
 
-  // ---------- trips ----------
-  function openTrip(t, scroll = true) {
-    selected = t.key;
-    layer.setStyle(styleFor);
-    const share = el("button", { type: "button", textContent: "Sao chép link" });
-    share.onclick = async () => {
-      // Link through the Worker's preview page, so chat apps show the cover photo and trip name
-      const q = new URLSearchParams({ t: t.key, n: t.name, d: `${tripRange(t)} · ${t.photos.length} ảnh` });
-      if (t.cover && !t.cover.private) q.set("c", t.cover.id);
-      try { await navigator.clipboard.writeText(`${API}/share?${q}`); toast("✓ Đã sao chép link chuyến đi"); }
-      catch { toast("Không sao chép được"); }
-    };
-    const edit = admin ? el("button", { type: "button", textContent: "Sửa" }) : null;
-    if (edit) edit.onclick = () => editTrip(t);
-    const head = [
-      el("div", { className: "trip-head" },
-        el("p", { className: "muted small", textContent: [tripRange(t), t.places.slice(0, 4).join(", ")].filter(Boolean).join(" · ") }),
-        t.note ? el("p", { className: "trip-note", textContent: t.note }) : null,
-        el("div", { className: "actions" }, edit, share)),
-    ];
-    showList(t.name, t.photos, head);
-    history.replaceState(null, "", `#trip=${t.key}`);
-    if (scroll) document.querySelector(".map-card").scrollIntoView({ behavior: "smooth", block: "start" });
+  // ---------- Thời gian ----------
+  function renderTime() {
+    const list = byDate(shown());
+    scopeList = list;
+    if (!list.length) return $("view").replaceChildren(admin ? empty("Chưa có ảnh nào.") : gate());
+    const months = [...groupBy(list, (p) => (p.takenAt || "").slice(0, 7) || "?").entries()];
+    const body = el("div", { className: "time-body" }, ...months.map(([m, l]) =>
+      el("section", { className: "month", id: `m-${m}` },
+        el("h3", {}, monthName(m), el("small", { textContent: countText(l) })),
+        ...[...groupBy(l, (p) => p.takenAt || "").entries()].map(([d, x]) => daySection(d, x, list, true)))));
+    const jump = (m) => document.getElementById(`m-${m}`)?.scrollIntoView({ block: "start" });
+    const rail = el("nav", { className: "time-rail", ariaLabel: "Chọn tháng" }, ...[...groupBy(months, ([m]) => (m === "?" ? "?" : m.slice(0, 4))).entries()].flatMap(([y, ms]) => [
+      el("strong", { textContent: y === "?" ? "Khác" : y }),
+      ...ms.map(([m, l]) => Object.assign(el("button", { type: "button" }, m === "?" ? "Chưa rõ ngày" : `Tháng ${+m.slice(5)}`, el("small", { textContent: l.length })), { onclick: () => jump(m) })),
+    ]));
+    const pick = el("select", { className: "time-pick", ariaLabel: "Đến tháng" }, ...months.map(([m, l]) => el("option", { value: m, textContent: `${monthName(m)} · ${l.length}` })));
+    pick.onchange = () => jump(pick.value);
+    $("view").replaceChildren(pick, el("div", { className: "time" }, body, rail));
   }
 
+  // ---------- Album ----------
+  const KIDS_KEY = "em-thoc";
+  function albumCard(cover, title, lines, path) {
+    const b = el("button", { type: "button", className: "album-card" }, el("span", { className: "album-cover" }, coverImg(cover)),
+      el("strong", { textContent: title }), ...lines.filter(Boolean).map((t) => el("small", { textContent: t })));
+    b.onclick = () => go(path);
+    return b;
+  }
+  function renderAlbums() {
+    if (!admin) return $("view").replaceChildren(gate());
+    const trips = computeTrips();
+    const dated = byDate(kids).filter((p) => p.takenAt);
+    const range = dated.length ? `${monthText(dated.at(-1).takenAt.slice(0, 7))} – ${monthText(dated[0].takenAt.slice(0, 7))}` : "";
+    $("view").replaceChildren(...[
+      kids.length ? el("section", { className: "block" }, el("h3", { textContent: "Album riêng" }),
+        el("div", { className: "album-grid" }, albumCard(kids.find((p) => p.id === meta.trips[KIDS_KEY]?.cover) || byDate(kids).find((p) => !p.video), KIDS, [countText(kids), range], `/album/${KIDS_KEY}`))) : null,
+      el("section", { className: "block" }, el("h3", {}, "Chuyến đi", el("small", { textContent: trips.length })),
+        trips.length ? el("div", { className: "album-grid" }, ...trips.map((t) => albumCard(t.cover, t.name, [tripRange(t), countText(t.photos)], `/album/${t.key}`))) : empty("Chưa có chuyến đi nào.")),
+    ].filter(Boolean));
+  }
+  function renderAlbum(key) {
+    if (!admin) return $("view").replaceChildren(gate());
+    if (key === KIDS_KEY) {
+      const list = byDate(kids);
+      scopeList = list;
+      return $("view").replaceChildren(crumbs("/album", "Album", KIDS, countText(list)),
+        ...[...groupBy(list, (p) => (p.takenAt || "").slice(0, 7) || "?").entries()].map(([m, l]) =>
+          el("section", { className: "month" }, el("h3", {}, monthName(m), el("small", { textContent: countText(l) })), el("div", { className: "grid" }, ...l.map((p) => thumbButton(p, list))))));
+    }
+    const t = computeTrips().find((x) => x.key === key);
+    if (!t) return go("/album");
+    scopeList = t.photos;
+    const edit = el("button", { type: "button", textContent: "Sửa" });
+    edit.onclick = () => editTrip(t);
+    $("view").replaceChildren(...[
+      crumbs("/album", "Album", t.name, [tripRange(t), t.places.slice(0, 4).join(", "), countText(t.photos)].filter(Boolean).join(" · "), edit),
+      t.note ? el("p", { className: "trip-note", textContent: t.note }) : null,
+      ...dayFeed(t.photos, true),
+    ].filter(Boolean));
+  }
   let editingTrip = null;
   function editTrip(t) {
     editingTrip = t;
     const f = $("tripForm");
     f.name.value = meta.trips[t.key]?.name || "";
-    f.name.placeholder = t.province;
+    f.name.placeholder = t.name;
     f.note.value = t.note;
     $("tripDlg").showModal();
   }
@@ -825,141 +971,150 @@
     try {
       await saveMeta({ ...meta, trips: { ...meta.trips, [t.key]: { ...(meta.trips[t.key] || {}), name: f.name.value.trim(), note: f.note.value.trim() } } });
       $("tripDlg").close();
-      const fresh = computeTrips().find((x) => x.key === t.key);
-      if (fresh) openTrip(fresh, false);
       toast("✓ Đã lưu chuyến đi");
     } catch (err) { toast(err.message); }
   };
 
-  function renderTrips() {
-    const trips = computeTrips();
-    $("tripCount").textContent = trips.length ? `${trips.length} chuyến` : "";
-    if (!trips.length) return $("trips").replaceChildren(el("p", { className: "empty", textContent: "Chưa có chuyến đi nào." }));
-    $("trips").replaceChildren(...trips.map((t, i) => {
-      const img = lazyImg(i < 4, { alt: "" });
-      setImg(img, t.cover, "thumb");
-      const b = el("button", { type: "button", className: "trip" }, img,
-        el("span", { className: "trip-info" },
-          el("strong", { textContent: t.name }),
-          el("small", { textContent: `${tripRange(t)} · ${t.photos.length} ảnh` })));
-      b.onclick = () => openTrip(t);
-      return b;
-    }));
+  // ---------- Cần xếp ----------
+  // A photo without GPS, taken on a day when every located photo is in one province, most likely belongs there
+  function todoGroups() {
+    const days = new Map();
+    for (const p of main) if (p.province && p.takenAt) {
+      const d = days.get(p.takenAt) || days.set(p.takenAt, { provinces: new Set(), areas: new Map() }).get(p.takenAt);
+      d.provinces.add(p.province);
+      d.areas.set(areaOf(p), (d.areas.get(areaOf(p)) || 0) + 1);
+    }
+    const out = { hint: [], place: [], date: [], clip: orphans };
+    for (const p of main) {
+      if (p.province) { if (!p.takenAt) out.date.push(p); continue; }
+      if (!p.takenAt) { out.date.push(p); continue; }
+      (days.get(p.takenAt)?.provinces.size === 1 ? out.hint : out.place).push(p);
+    }
+    return { ...out, days };
+  }
+  // Save many places at once, offer undo, then tidy the files on Drive in the background
+  async function assign(items, msg, undoable = true) {
+    const before = items.map(({ id }) => { const p = photos.find((x) => x.id === id); return { id, changes: { province: p.province || "", place: p.place || "" } }; });
+    const withClips = items.flatMap((x) => [x, ...(liveOf.has(x.id) ? [{ ...x, id: liveOf.get(x.id).id }] : [])]);
+    try {
+      applyUpdate(await api("/api/photos/assign", jsonBody("POST", { items: withClips })));
+      setPhotos([...photos, ...kids]);
+      renderAll();
+      undoable ? toastAction(msg, "Hoàn tác", () => assign(before, "Đã hoàn tác", false)) : toast(msg);
+      const ids = withClips.map((x) => x.id);
+      for (let i = 0; i < ids.length; i += 6) await api("/api/consolidate", jsonBody("POST", { ids: ids.slice(i, i + 6) })).catch(() => {});
+    } catch (err) { toast(err.message); }
+  }
+  function renderTodo(tab) {
+    if (!admin) return $("view").replaceChildren(gate());
+    const g = todoGroups();
+    const tabs = [["goi-y", "Có gợi ý", g.hint], ["chua-ro-noi", "Chưa rõ nơi", g.place], ["chua-ro-ngay", "Chưa rõ ngày", g.date], ["clip-le", "Clip Live lẻ", g.clip]].filter(([, , l]) => l.length);
+    if (!tabs.length) return $("view").replaceChildren(empty("Mọi ảnh đều đã có nơi và ngày."));
+    const [key, , list] = tabs.find(([k]) => k === tab) || tabs[0];
+    const scope = byDate(list);
+    scopeList = scope;
+    const bar = el("div", { className: "tag-row scroll" }, ...tabs.map(([k, label, l]) =>
+      Object.assign(el("button", { type: "button", className: `tag${k === key ? " on" : ""}` }, label, el("small", { textContent: l.length })), { onclick: () => go(`/can-xep/${k}`) })));
+    const top = (text, btn) => el("div", { className: "todo-top" }, el("p", { className: "muted small", textContent: text }), btn);
+    const body = [];
+    if (key === "goi-y") {
+      const one = (p) => {
+        const d = g.days.get(p.takenAt);
+        // The area too, when that day was spent in a single one
+        return { id: p.id, changes: { province: [...d.provinces][0], place: d.areas.size === 1 ? [...d.areas.keys()][0] : "" } };
+      };
+      const all = el("button", { type: "button", className: "primary", textContent: `Xếp cả ${list.length} theo gợi ý` });
+      all.onclick = () => { if (confirm(`Xếp ${list.length} mục vào nơi được gợi ý?`)) { all.disabled = true; assign(list.map(one), `✓ Đã xếp ${list.length} mục`); } };
+      body.push(top("Không có GPS, nhưng ảnh khác cùng ngày đều ở một nơi.", all));
+      for (const [day, l] of groupBy(scope, (p) => p.takenAt)) {
+        const d = g.days.get(day), name = [...d.provinces][0];
+        const area = [...d.areas.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n)[0];
+        body.push(todoDay(day, l, scope, `Cùng ngày: ${[area, name].filter((x, i, a) => a.indexOf(x) === i).join(", ")}`, name, () => assign(l.map(one), `✓ Đã xếp ${l.length} mục vào ${name}`)));
+      }
+    } else if (key === "chua-ro-noi") {
+      body.push(top("Không có GPS và không có ảnh nào cùng ngày để gợi ý. Chọn tỉnh cho cả ngày.", null));
+      for (const [day, l] of groupBy(scope, (p) => p.takenAt)) body.push(todoDay(day, l, scope, "", "", null));
+    } else if (key === "clip-le") {
+      const del = el("button", { type: "button", className: "danger", textContent: `Xóa ${list.length} clip` });
+      del.onclick = () => { if (confirm(`Xóa ${list.length} clip khỏi Memories và Google Drive?`)) { scope.forEach((p) => picked.add(p.id)); batch("delete"); } };
+      body.push(top("Clip 1–3 giây của Live Photo mà ảnh chính không còn. Không hiện ở các mục khác.", del), el("div", { className: "grid" }, ...scope.map((p) => thumbButton(p, scope))));
+    } else {
+      body.push(top("File không ghi ngày chụp. Mở từng mục để nhập ngày, hoặc dùng Chọn nhiều.", null), el("div", { className: "grid" }, ...scope.map((p) => thumbButton(p, scope))));
+    }
+    $("view").replaceChildren(bar, ...body);
+  }
+  // One day to sort: a strip of photos, the suggestion, and a province picker
+  function todoDay(day, list, scope, hint, suggested, accept) {
+    const pick = el("select", { ariaLabel: "Chọn tỉnh" });
+    provinceOptions(pick, "", suggested ? "Nơi khác…" : "Chọn tỉnh…");
+    pick.onchange = () => pick.value && assign(list.map((p) => ({ id: p.id, changes: { province: pick.value, place: "" } })), `✓ Đã xếp ${list.length} mục vào ${pick.value}`);
+    const yes = accept ? el("button", { type: "button", className: "primary", textContent: `Xếp vào ${suggested}` }) : null;
+    if (yes) yes.onclick = () => { yes.disabled = true; accept(); };
+    const strip = el("div", { className: "grid strip" });
+    const MAX = isPhone() ? 8 : 14;
+    const draw = (n) => strip.replaceChildren(...list.slice(0, n).map((p) => thumbButton(p, scope)));
+    draw(selecting ? list.length : MAX);
+    const more = list.length > MAX && !selecting ? el("button", { type: "button", className: "link", textContent: `Xem cả ${list.length}` }) : null;
+    if (more) more.onclick = () => { draw(list.length); more.remove(); };
+    return el("section", { className: "todo-day" },
+      el("div", { className: "todo-head" }, el("div", {}, el("strong", { textContent: dayText(day) }), el("p", { className: "muted small", textContent: [hint, countText(list)].filter(Boolean).join(" · ") })),
+        el("div", { className: "actions" }, yes, pick)),
+      strip, more);
   }
 
-  // ---------- stats ----------
-  function renderStats() {
-    const visited = visitedSet();
-    const list = shown();
-    $("visitedText").textContent = `Đã đến ${visited.size}/34 tỉnh, thành phố · ${list.length} ảnh${year ? ` · năm ${year}` : ""}`;
-    // Year chips, only when photos span more than one year
-    const years = [...new Set(photos.map((p) => (p.takenAt || "").slice(0, 4)).filter(Boolean))].sort().reverse();
-    $("years").hidden = years.length < 2;
+  // ---------- frame: tabs, years, current view ----------
+  const isPhone = () => matchMedia("(max-width: 640px)").matches;
+  function renderFrame([tab = ""]) {
+    const todo = admin ? (() => { const g = todoGroups(); return g.hint.length + g.place.length + g.date.length + g.clip.length; })() : 0;
+    const cur = tab === "noi" ? "" : tab;
+    $("tabs").replaceChildren(...TABS.filter(([k]) => k !== "can-xep" || todo).map(([k, label]) => {
+      const b = el("button", { type: "button", className: k === cur ? "on" : "" }, label, k === "can-xep" ? el("small", { textContent: todo }) : null);
+      if (k === cur) b.setAttribute("aria-current", "page");
+      b.onclick = () => go(`/${k}`);
+      return b;
+    }));
+    const years = [...new Set(main.map((p) => (p.takenAt || "").slice(0, 4)).filter(Boolean))].sort().reverse();
+    $("years").hidden = years.length < 2 || cur === "can-xep" || (cur === "album" && route()[1] === KIDS_KEY);
     $("years").replaceChildren(...["", ...years].map((y) => {
       const b = el("button", { type: "button", className: y === year ? "on" : "", textContent: y || "Tất cả" });
-      b.onclick = () => { year = y; selected = null; renderAll(); };
+      b.onclick = () => { year = y; saveUI({ year }); renderAll(); };
       return b;
     }));
-    $("visitedBar").style.width = `${(visited.size / 34) * 100}%`;
-    $("photoCount").textContent = list.length ? `${list.length} ảnh` : "";
-    const items = [
-      [list.length, "Ảnh"],
-      [computeTrips().length, "Chuyến đi"],
-      [`${visited.size}/34`, "Tỉnh, thành phố"],
-      [places.length, "Địa điểm đã đến"],
-      [plans.length, "Nơi sắp đi"],
-    ];
-    $("stats").replaceChildren(...items.map(([v, label]) => el("div", { className: "stat" }, el("span", { textContent: label }), el("strong", { textContent: v }))));
+    const visited = visitedSet();
+    $("visitedText").textContent = [`${visited.size}/34 tỉnh, thành phố`, main.length ? countText(shown()) : ""].filter(Boolean).join(" · ");
   }
-
-  // ---------- timeline ----------
-  // Long albums: show 60 photos, then 60 more each time the end comes into view
-  const TL_STEP = 60;
-  let tlLimit = TL_STEP, tlObserver;
-  function renderTimeline() {
-    tlObserver?.disconnect();
-    const all = shown();
-    if (!all.length) return $("timeline").replaceChildren(el("p", { className: "empty", textContent: "Chưa có ảnh nào." }));
-    const sorted = newestFirst(all);
-    const months = new Map();
-    for (const p of sorted.slice(0, tlLimit)) {
-      const d = new Date(photoDate(p));
-      const month = isNaN(d) ? "Không rõ thời gian" : `Tháng ${d.getMonth() + 1}/${d.getFullYear()}`;
-      const day = isNaN(d) ? "" : fmtDate(photoDate(p));
-      if (!months.has(month)) months.set(month, new Map());
-      const days = months.get(month);
-      days.set(day, [...(days.get(day) || []), p]);
-    }
-    $("timeline").replaceChildren(...[...months.entries()].map(([month, days]) =>
-      el("div", { className: "tl-month" },
-        el("h3", { textContent: month }),
-        ...[...days.entries()].map(([day, list]) => {
-          const places = [...new Set(list.map((p) => [p.place, p.province].filter(Boolean).join(", ")).filter(Boolean))].join(" · ");
-          return el("div", { className: "tl-day" },
-            el("p", { className: "tl-day-head" }, el("span", { textContent: day || "Không rõ ngày" }), places ? el("small", { textContent: ` · ${places}` }) : null),
-            el("div", { className: "grid" }, ...list.map((p) => thumbButton(p, sorted))));
-        }))));
-    if (sorted.length > tlLimit) {
-      const more = el("div", { className: "tl-more", textContent: `Đang tải thêm… (${tlLimit}/${sorted.length})` });
-      $("timeline").append(more);
-      tlObserver = new IntersectionObserver((entries) => {
-        if (!entries[0].isIntersecting) return;
-        tlLimit += TL_STEP;
-        renderTimeline();
-      }, { rootMargin: "400px" });
-      tlObserver.observe(more);
-    }
-  }
-
-  // Album "Em Thóc": one card; tapping it opens the whole album full-screen, month by month
-  const monthName = (m) => (m === "?" ? "Chưa rõ ngày" : `Tháng ${+m.slice(5)}/${m.slice(0, 4)}`);
-  const kidsOrder = () => [...kids].sort((x, y) => (y.takenAt || "").localeCompare(x.takenAt || "") || x.name.localeCompare(y.name));
-  function renderKids() {
-    const card = $("kidsCard");
-    card.hidden = !kids.length;
-    if (!kids.length) return;
-    const order = kidsOrder();
-    const dated = order.filter((p) => p.takenAt);
-    const videos = kids.filter((p) => p.video).length;
-    const range = dated.length ? `${monthText(dated[dated.length - 1].takenAt.slice(0, 7))} – ${monthText(dated[0].takenAt.slice(0, 7))}` : "";
-    const cover = order.find((p) => !p.video) || order[0];
-    const img = lazyImg(true, { alt: "" });
-    setImg(img, cover, "thumb");
-    $("kidsOpen").replaceChildren(
-      el("span", { className: "kids-cover" }, img),
-      el("span", { className: "kids-meta" },
-        el("strong", { textContent: "Em Thóc" }),
-        el("span", { className: "muted small", textContent: `${kids.length - videos} ảnh${videos ? ` · ${videos} video` : ""}` }),
-        range ? el("span", { className: "muted small", textContent: range }) : null),
-      el("span", { className: "kids-go", textContent: "Xem tất cả ›" }));
-    if ($("kidsDlg").open) renderKidsAlbum();
-  }
-  function renderKidsAlbum() {
-    const order = kidsOrder();
-    const months = new Map();
-    for (const p of order) {
-      const m = (p.takenAt || "").slice(0, 7) || "?";
-      months.set(m, [...(months.get(m) || []), p]);
-    }
-    const keys = [...months.keys()].sort((x, y) => (x === "?") - (y === "?") || y.localeCompare(x));
-    $("kidsTitle").textContent = `Em Thóc · ${kids.length}`;
-    $("kidsBody").replaceChildren(...keys.flatMap((m) => [
-      el("h3", { className: "kids-month" }, monthName(m), el("span", { className: "muted small", textContent: ` ${months.get(m).length}` })),
-      el("div", { className: "grid" }, ...months.get(m).map((p) => thumbButton(p, order))),
-    ]));
-  }
-  $("kidsOpen").onclick = () => { renderKidsAlbum(); $("kidsDlg").showModal(); };
-  $("kidsClose").onclick = () => $("kidsDlg").close();
-
   function renderAll() {
-    saveUI({ selected: provinces.concat(ABROAD, OTHER).includes(selected) ? selected : null, year });
-    renderStats();
-    renderSide();
-    renderTrips();
-    renderTimeline();
-    renderKids();
+    const r = route();
+    selected = r[0] === "noi" ? provinces.find((n) => slug(n) === r[1]) || null : null;
+    scopeList = [];
+    renderFrame(r);
+    const home = !r.length;
+    $("home").hidden = !home;
+    $("view").hidden = home;
+    if (home) {
+      scopeList = shown();
+      renderProvinces($("sideBody"));
+      map.invalidateSize();
+    } else if (r[0] === "noi") selected ? renderProvince(selected, r[2]) : go("/");
+    else if (r[0] === "thoi-gian") renderTime();
+    else if (r[0] === "album") r[1] ? renderAlbum(r[1]) : renderAlbums();
+    else if (r[0] === "can-xep") renderTodo(r[1]);
+    else go("/");
     refreshMap();
+    if (selecting) renderSelBar();
   }
+  const renderSide = renderAll; // the pinned-place editor redraws through this
+  // Each address keeps its own scroll position, so going back lands where you were
+  const scrolls = {};
+  let lastHash = location.hash;
+  window.addEventListener("scroll", () => { scrolls[location.hash === lastHash ? lastHash : ""] = window.scrollY; }, { passive: true });
+  window.addEventListener("hashchange", () => {
+    lastHash = location.hash;
+    if (!geo) return;
+    const y = scrolls[lastHash] || 0;
+    renderAll();
+    window.scrollTo(0, y);
+  });
 
   // ---------- viewer ----------
   let viewList = [], viewIndex = 0;
@@ -974,27 +1129,30 @@
     const p = current();
     if (!p) return;
     // Small thumbnail at once (usually cached), swapped for the full photo when it has loaded
-    const img = $("viewerImg"), vid = $("viewerVid");
-    vid.pause();
-    vid.removeAttribute("src");
-    vid.hidden = !p.video;
-    img.hidden = !!p.video;
-    if (p.video) {
-      setVideo(vid, p);
-    } else {
+    const img = $("viewerImg"), vid = $("viewerVid"), clip = liveOf.get(p.id);
+    const stop = () => { vid.pause(); vid.removeAttribute("src"); vid.load(); vid.hidden = true; img.hidden = false; };
+    stop();
+    img.removeAttribute("src");
+    if (p.video) { vid.hidden = false; img.hidden = true; setVideo(vid, p); }
+    else {
       setImg(img, p, "thumb");
-      const full = new Image();
-      full.onload = () => { if (current() === p) img.src = full.src; };
-      setImg(full, p);
+      const full = `${API}/api/img/${p.id}`;
+      blobUrl(full, true).then((src) => { if (src && current() === p) img.src = src; });
     }
-    $("viewerImg").alt = p.title || "";
-    const where = [p.place, p.province].filter(Boolean).join(", ");
-    $("viewerText").replaceChildren(...[
-      p.title ? el("p", {}, el("strong", { textContent: p.title })) : null,
-      el("p", { className: "muted small", textContent: [where, fmtDate(photoDate(p)), p.camera].filter(Boolean).join(" · ") }),
-      p.note ? el("p", { textContent: p.note }) : null,
-      photoInfo(p),
-    ].filter(Boolean));
+    $("viewerLive").hidden = !clip;
+    $("viewerLive").onclick = async () => {
+      if (!vid.hidden) return stop();
+      const src = await blobUrl(`${API}/api/img/${clip.id}`, true);
+      if (!src || current() !== p) return;
+      img.hidden = true; vid.hidden = false; vid.src = src; vid.onended = stop; vid.play().catch(() => {});
+    };
+    vid.onended = null;
+    img.alt = p.title || "";
+    const where = [p.province ? areaOf(p) : "", p.province].filter((x, i, l) => x && x !== "Chưa rõ khu vực" && l.indexOf(x) === i).join(", ");
+    $("viewerCap").replaceChildren(el("strong", { textContent: p.takenAt ? dayText(p.takenAt) : "Chưa rõ ngày" }), el("span", { textContent: where || (p.album ? p.album : "Chưa có địa điểm") }));
+    $("viewerCount").textContent = `${viewIndex + 1} / ${viewList.length}`;
+    $("viewerText").replaceChildren(...[p.title ? el("p", {}, el("strong", { textContent: p.title })) : null, p.note ? el("p", { textContent: p.note }) : null, photoInfo(p)].filter(Boolean));
+    $("setDate").value = p.takenAt || "";
     $("viewerPrev").hidden = viewIndex <= 0;
     $("viewerNext").hidden = viewIndex >= viewList.length - 1;
     $("viewerTools").hidden = !admin;
@@ -1002,7 +1160,8 @@
       $("moveProvince").value = p.province || "";
       $("pinPlace").hidden = p.lat == null;
       $("coverProvince").hidden = !p.province;
-      $("coverTrip").hidden = !computeTrips().some((t) => t.photos.includes(p));
+      $("coverTrip").hidden = !p.album && !computeTrips().some((t) => t.photos.includes(p));
+      $("coverTrip").textContent = p.album ? "Làm ảnh bìa album" : "Làm ảnh bìa chuyến";
     }
   }
   // Original info read from the file at upload time
@@ -1016,18 +1175,32 @@
       ["Nơi chụp (GPS)", [e.gpsPlace, e.gpsProvince].filter(Boolean).join(", ")],
       ["Độ cao", e.altitude],
       ["Kích thước", e.size || (p.width ? `${p.width}×${p.height}` : "")],
-      ["Tên file", p.name],
+      ["Tên file", p.name.replace(/^dev-/, "")],
     ].filter(([, v]) => v);
     if (p.lat != null) rows.push(["Tọa độ", el("a", { href: `https://www.google.com/maps?q=${p.lat},${p.lng}`, target: "_blank", rel: "noopener", textContent: `${(+p.lat).toFixed(5)}, ${(+p.lng).toFixed(5)}` })]);
     if (!rows.length) return null;
-    return el("details", { className: "photo-info" }, el("summary", { textContent: "Thông tin ảnh" }),
+    return el("div", { className: "photo-info" },
       el("dl", {}, ...rows.flatMap(([k, v]) => [el("dt", { textContent: k }), el("dd", {}, v)])));
   }
   const step = (d) => { if (viewList[viewIndex + d]) { viewIndex += d; showViewer(); } };
   $("viewerPrev").onclick = () => step(-1);
   $("viewerNext").onclick = () => step(1);
   $("viewerClose").onclick = () => $("viewer").close();
-  $("viewer").addEventListener("click", (e) => { if (e.target.classList.contains("viewer-box")) $("viewer").close(); });
+  $("viewer").addEventListener("close", () => { $("viewerVid").pause(); });
+  $("viewerInfo").onclick = () => $("viewer").classList.toggle("info");
+  // Swipe left / right on phones
+  let touchX = null;
+  $("viewer").addEventListener("touchstart", (e) => { touchX = e.touches.length === 1 && !e.target.closest(".viewer-info, video") ? e.touches[0].clientX : null; }, { passive: true });
+  $("viewer").addEventListener("touchend", (e) => { if (touchX == null) return; const d = e.changedTouches[0].clientX - touchX; if (Math.abs(d) > 50) step(d < 0 ? 1 : -1); }, { passive: true });
+  $("setDate").onchange = async (e) => {
+    const p = current();
+    try {
+      applyUpdate(await api("/api/photos/assign", jsonBody("POST", { items: withClip([p.id]).map((id) => ({ id, changes: { takenAt: e.target.value } })) })));
+      setPhotos([...photos, ...kids]);
+      renderAll(); showViewer(); toast("✓ Đã lưu ngày");
+    } catch (err) { toast(err.message); }
+  };
+  $("viewer").addEventListener("click", (e) => { if (e.target.classList.contains("viewer-stage")) $("viewer").close(); });
   document.addEventListener("keydown", (e) => {
     if (!$("viewer").open || /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) return;
     if (e.key === "ArrowLeft") step(-1);
@@ -1044,7 +1217,8 @@
   // Change place: pick a province, saved at once (the file moves to that folder on Drive)
   $("moveProvince").onchange = async (e) => {
     try {
-      applyUpdate(await api(`/api/photos/${current().id}`, jsonBody("PATCH", { province: e.target.value })));
+      applyUpdate(await api(`/api/photos/${current().id}`, jsonBody("PATCH", { province: e.target.value, ...(e.target.value === current().province ? {} : { place: "" }) })));
+      setPhotos([...photos, ...kids]);
       renderAll();
       showViewer();
       toast(`✓ Đã chuyển sang ${e.target.value || OTHER}`);
@@ -1064,9 +1238,9 @@
     const p = current();
     if (!confirm("Xóa ảnh này khỏi bản đồ và Google Drive?")) return;
     try {
-      await api(`/api/photos/${p.id}`, { method: "DELETE" });
-      photos = photos.filter((x) => x.id !== p.id);
-      kids = kids.filter((x) => x.id !== p.id);
+      const ids = withClip([p.id]);
+      await api("/api/photos/batch", jsonBody("POST", { action: "delete", ids }));
+      setPhotos([...photos, ...kids].filter((x) => !ids.includes(x.id)));
       $("viewer").close();
       renderAll();
       toast("✓ Đã xóa");
@@ -1079,9 +1253,9 @@
   };
   $("coverTrip").onclick = async () => {
     const p = current();
-    const t = computeTrips().find((x) => x.photos.includes(p));
+    const t = p.album ? { key: KIDS_KEY } : computeTrips().find((x) => x.photos.includes(p));
     if (!t) return;
-    try { await saveMeta({ ...meta, trips: { ...meta.trips, [t.key]: { ...(meta.trips[t.key] || {}), cover: p.id } } }); toast("✓ Đã đặt ảnh bìa chuyến đi"); }
+    try { await saveMeta({ ...meta, trips: { ...meta.trips, [t.key]: { ...(meta.trips[t.key] || {}), cover: p.id } } }); toast("✓ Đã đặt ảnh bìa"); }
     catch (err) { toast(err.message); }
   };
 
@@ -1089,11 +1263,11 @@
   function renderSelBar() {
     $("selBar").hidden = !selecting;
     $("selCount").textContent = `Đã chọn ${picked.size} ảnh`;
-    for (const id of ["selMove", "selDownload", "selDelete"]) $(id).disabled = !picked.size;
+    for (const id of ["selMove", "selDate", "selDownload", "selDelete"]) $(id).disabled = !picked.size;
     $("selDownload").textContent = picked.size > 1 ? `Tải ${picked.size} ảnh` : "Tải về";
     const scope = albumPhotos();
     const all = scope.length && scope.every((p) => picked.has(p.id));
-    $("selAll").textContent = all ? "Bỏ chọn" : selected ? `Chọn cả ${selected}` : "Chọn tất cả";
+    $("selAll").textContent = all ? "Bỏ chọn" : `Chọn cả ${scope.length}`;
   }
   function setSelecting(on) {
     selecting = on;
@@ -1104,11 +1278,11 @@
     renderAll();
   }
   async function batch(action, changes) {
-    const ids = [...picked];
+    const ids = withClip([...picked]);
     try {
       const res = await api("/api/photos/batch", jsonBody("POST", { action, ids, changes }));
-      if (action === "delete") { photos = photos.filter((p) => !picked.has(p.id)); kids = kids.filter((p) => !picked.has(p.id)); }
-      else applyUpdate(res);
+      if (action === "delete") setPhotos([...photos, ...kids].filter((p) => !ids.includes(p.id)));
+      else { applyUpdate(res); setPhotos([...photos, ...kids]); }
       picked.clear();
       renderSelBar();
       renderAll();
@@ -1126,8 +1300,18 @@
   };
   $("selMove").onclick = () => {
     const province = $("selProvince").value;
-    if (!province && !confirm("Chưa chọn tỉnh: các ảnh sẽ chuyển vào Other. Tiếp tục?")) return;
-    batch("update", { province });
+    if (!province && !confirm("Chưa chọn tỉnh: các ảnh sẽ thành “chưa rõ nơi”. Tiếp tục?")) return;
+    picked.size && assign([...picked].map((id) => ({ id, changes: { province, place: "" } })), `✓ Đã chuyển ${picked.size} mục`).then(() => { picked.clear(); renderSelBar(); renderAll(); });
+  };
+  $("selDate").onchange = async (e) => {
+    if (!picked.size || !e.target.value) return;
+    const ids = withClip([...picked]);
+    try {
+      applyUpdate(await api("/api/photos/assign", jsonBody("POST", { items: ids.map((id) => ({ id, changes: { takenAt: e.target.value } })) })));
+      setPhotos([...photos, ...kids]);
+      toast(`✓ Đã đặt ngày cho ${picked.size} mục`);
+      picked.clear(); e.target.value = ""; renderSelBar(); renderAll();
+    } catch (err) { toast(err.message); }
   };
   $("selDelete").onclick = () => confirm(`Xóa ${picked.size} ảnh khỏi bản đồ và Google Drive?`) && batch("delete");
 
@@ -1208,8 +1392,7 @@
     adminKey = null;
     store.set("mem-admin", null);
     renderAdmin(null);
-    photos = photos.filter((p) => !p.private);
-    kids = kids.filter((p) => !p.private);
+    setPhotos([]);
     renderAll();
     toast("Đã thoát chế độ quản lý");
   };
@@ -1222,7 +1405,7 @@
     lastSync = Date.now();
     try {
       const next = await Promise.all([api("/api/photos"), api("/api/visited"), api("/api/meta"), api("/api/places"), loadPlans()]);
-      if (JSON.stringify(next) === JSON.stringify([[...photos, ...kids], manual, meta, places, plans])) return;
+      if (JSON.stringify(next) === JSON.stringify([raw, manual, meta, places, plans])) return;
       [, manual, meta, places, plans] = next;
       setPhotos(next[0]);
       renderAll();
@@ -1232,7 +1415,7 @@
 
   // ---------- backup ----------
   // ---------- download ----------
-  const fileName = (p) => [p.takenAt, p.name || `${p.id}.jpg`].filter(Boolean).join(" ");
+  const fileName = (p) => [p.takenAt, (p.name || `${p.id}.jpg`).replace(/^dev-/, "")].filter(Boolean).join(" ");
   async function fetchPhoto(p) {
     const r = await fetch(`${API}/api/img/${p.id}`, { headers: adminKey ? { "x-admin-key": adminKey } : {} });
     if (!r.ok) throw new Error(`Lỗi ${r.status}`);
@@ -1281,8 +1464,8 @@
   }
   const today = () => new Date().toISOString().slice(0, 10);
   $("viewerDownload").onclick = () => downloadPhotos([current()]);
-  $("selDownload").onclick = () => downloadPhotos(photos.filter((p) => picked.has(p.id)), `memories-${picked.size}-anh-${today()}.zip`);
-  $("backupZip").onclick = () => downloadPhotos(photos, `memories-album-${today()}.zip`, JSON.stringify({ photos, visited: manual, places, plans, meta }, null, 2));
+  $("selDownload").onclick = () => downloadPhotos([...photos, ...kids].filter((p) => picked.has(p.id)), `memories-${picked.size}-anh-${today()}.zip`);
+  $("backupZip").onclick = () => downloadPhotos([...photos, ...kids], `memories-album-${today()}.zip`, JSON.stringify({ photos, visited: manual, places, plans, meta }, null, 2));
 
   // ---------- places visited without photos ----------
   async function saveManual(list) {
@@ -1391,7 +1574,7 @@
   // Open the dialog first: pick the place, then drop or choose photos
   function openUpload() {
     pending = [];
-    if ($("upProvince").options.length < 2) provinceOptions($("upProvince"), "", "Other (không chọn tỉnh)");
+    if ($("upProvince").options.length < 2) provinceOptions($("upProvince"), "", "Chưa rõ nơi");
     $("upProvince").value = selected && provinces.includes(selected) ? selected : "";
     $("upSummary").textContent = "";
     $("uploadList").replaceChildren();
@@ -1609,7 +1792,7 @@
           fileId: p.fileId, thumbId: p.thumbId, name: p.name, width: p.full.width, height: p.full.height, hash: p.hash,
           camera: p.camera, exif: p.exif, province: p.province, place: p.place || "", takenAt: p.takenAt, title: "", lat: p.lat, lng: p.lng,
         })) }));
-        photos.push(...added);
+        setPhotos([...photos, ...kids, ...added]);
         for (const p of uploaded) { p.done = true; p.box.className = "up-item ok"; }
       } catch (err) {
         for (const p of uploaded) { p.box.className = "up-item err"; p.box.title = err.message; }
@@ -1641,7 +1824,7 @@
     geo = await (await fetch("vn-34.json")).json();
     provinces = geo.features.map((f) => f.properties.name).sort((a, b) => a.localeCompare(b, "vi"));
     provinceOptions($("selProvince"), "", "Chọn tỉnh…");
-    provinceOptions($("moveProvince"), "", "Other");
+    provinceOptions($("moveProvince"), "", "Chưa rõ nơi");
     initMap();
     try {
       const loaded = await dataP;
@@ -1653,22 +1836,8 @@
     await adminP;
     // Put back what was open last time before the first paint, so nothing jumps
     if (ui.year && photos.some((p) => (p.takenAt || "").startsWith(ui.year))) year = ui.year;
-    if (ui.selected && provinces.concat(ABROAD, OTHER).includes(ui.selected)) selected = ui.selected;
-    Object.assign(pageAt, ui.pages || {});
-    if (selected) albumKey = selected;
     renderAll();
-    if (ui.scroll) setTimeout(() => window.scrollTo(0, ui.scroll), 0);
-    window.addEventListener("scroll", () => saveUI({ scroll: Math.round(window.scrollY) }), { passive: true });
-    $("sideBack").onclick = () => {
-      selected = null;
-      saveUI({ selected: null });
-      history.replaceState(null, "", location.pathname);
-      renderAll();
-    };
-    // Shared trip link: #trip=<key>
-    const key = new URLSearchParams(location.hash.slice(1)).get("trip");
-    const trip = key && computeTrips().find((t) => t.key === key);
-    if (trip) openTrip(trip);
+    $("loading").hidden = true;
   }
   start();
 })();
